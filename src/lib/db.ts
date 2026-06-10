@@ -62,6 +62,11 @@ export async function ensureDB() {
         created_at TEXT NOT NULL DEFAULT (datetime('now'))
       )
     `);
+
+    const cols = await db.execute(`SELECT COUNT(*) as cnt FROM pragma_table_info('products') WHERE name = 'inventoryType'`)
+    if (Number(cols.rows[0]?.cnt ?? 0) === 0) {
+      await db.execute(`ALTER TABLE products ADD COLUMN inventoryType TEXT NOT NULL DEFAULT 'BULK' CHECK (inventoryType IN ('SERIALIZED', 'BULK'))`)
+    }
   })()
 
   return initPromise
