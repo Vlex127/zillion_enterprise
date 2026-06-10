@@ -15,7 +15,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { AlertTriangle, TrendingUp, Wallet, Banknote, CreditCard } from "lucide-react"
+import { AlertTriangle, TrendingUp, Wallet, Banknote, CreditCard, Barcode, Package } from "lucide-react"
 import { useState } from "react"
 import { Input } from "@/components/ui/input"
 import {
@@ -50,6 +50,8 @@ type Sale = {
   profit: number
   payment_method: "cash" | "transfer" | "pos"
   created_at: string
+  inventoryType: "SERIALIZED" | "BULK"
+  imeis: string
 }
 
 function formatCurrency(n: number) {
@@ -199,6 +201,7 @@ export function DashboardClient({
                 <TableHead>Time</TableHead>
                 <TableHead>Staff</TableHead>
                 <TableHead>Item</TableHead>
+                <TableHead>Type</TableHead>
                 <TableHead className="text-right">Qty</TableHead>
                 <TableHead className="text-right">Total</TableHead>
                 <TableHead className="text-right">Profit</TableHead>
@@ -208,18 +211,45 @@ export function DashboardClient({
             <TableBody>
               {filteredSales.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
+                  <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
                     No sales recorded{filterDate || filterMethod ? " matching filters" : " yet"}
                   </TableCell>
                 </TableRow>
               )}
-              {filteredSales.map((sale) => (
+              {filteredSales.map((sale) => {
+                const isSerialized = sale.inventoryType === "SERIALIZED"
+                return (
                 <TableRow key={sale.id}>
                   <TableCell className="font-mono text-xs">
                     {formatTime(sale.created_at)}
                   </TableCell>
                   <TableCell>{sale.seller_name}</TableCell>
-                  <TableCell>{sale.product_name}</TableCell>
+                  <TableCell>
+                    <span className="flex items-center gap-1.5">
+                      {isSerialized ? (
+                        <Barcode className="size-3.5 text-muted-foreground shrink-0" />
+                      ) : (
+                        <Package className="size-3.5 text-muted-foreground shrink-0" />
+                      )}
+                      {sale.product_name}
+                    </span>
+                    {isSerialized && sale.imeis && (
+                      <span className="block font-mono text-xs text-muted-foreground mt-0.5">
+                        {sale.imeis}
+                      </span>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    <span
+                      className={`inline-block rounded px-1.5 py-0.5 text-xs font-medium ${
+                        isSerialized
+                          ? "bg-blue-100 text-blue-700"
+                          : "bg-gray-100 text-gray-700"
+                      }`}
+                    >
+                      {isSerialized ? "IMEI" : "BULK"}
+                    </span>
+                  </TableCell>
                   <TableCell className="text-right">{sale.quantity}</TableCell>
                   <TableCell className="text-right font-medium">
                     {formatCurrency(sale.total)}
@@ -241,7 +271,8 @@ export function DashboardClient({
                     </span>
                   </TableCell>
                 </TableRow>
-              ))}
+              )
+              })}
             </TableBody>
           </Table>
         </div>

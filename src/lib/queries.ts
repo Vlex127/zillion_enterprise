@@ -13,6 +13,8 @@ export type Sale = {
   payment_method: "cash" | "transfer" | "pos"
   created_at: string
   product_name: string
+  inventoryType: "SERIALIZED" | "BULK"
+  imeis: string
 }
 
 export type Product = {
@@ -107,12 +109,15 @@ export async function getRecentSales(
   const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : ""
 
   const result = await db.execute({
-    sql: `SELECT s.*, p.name as product_name,
-      COALESCE(u.first_name || ' ' || u.last_name, u.email) as seller_name
+    sql: `SELECT s.*, p.name as product_name, p.inventoryType,
+      COALESCE(u.first_name || ' ' || u.last_name, u.email) as seller_name,
+      GROUP_CONCAT(pi.imei, ', ') as imeis
     FROM sales s
     JOIN products p ON s.product_id = p.id
     LEFT JOIN users u ON s.seller_id = u.id
+    LEFT JOIN product_items pi ON pi.sale_id = s.id
     ${where}
+    GROUP BY s.id
     ORDER BY s.created_at DESC LIMIT ?`,
     args: [...args, limit],
   })
@@ -351,12 +356,15 @@ export async function getSellerSales(
   const where = `WHERE ${conditions.join(" AND ")}`
 
   const result = await db.execute({
-    sql: `SELECT s.*, p.name as product_name,
-      COALESCE(u.first_name || ' ' || u.last_name, u.email) as seller_name
+    sql: `SELECT s.*, p.name as product_name, p.inventoryType,
+      COALESCE(u.first_name || ' ' || u.last_name, u.email) as seller_name,
+      GROUP_CONCAT(pi.imei, ', ') as imeis
     FROM sales s
     JOIN products p ON s.product_id = p.id
     LEFT JOIN users u ON s.seller_id = u.id
+    LEFT JOIN product_items pi ON pi.sale_id = s.id
     ${where}
+    GROUP BY s.id
     ORDER BY s.created_at DESC LIMIT 100`,
     args,
   })
@@ -467,5 +475,7 @@ function mapSale(row: any): Sale {
     payment_method: row.payment_method as "cash" | "transfer" | "pos",
     created_at: row.created_at as string,
     product_name: (row.product_name as string) ?? "Unknown",
+    inventoryType: (row.inventoryType as "SERIALIZED" | "BULK") ?? "BULK",
+    imeis: (row.imeis as string) ?? "",
   }
 }
