@@ -110,6 +110,7 @@ export function LoginForm({
               required
             />
           </Field>
+          <div id="clerk-captcha" />
           <Field>
             <Button type="submit" disabled={loading}>
               {loading ? "Signing in..." : "Login"}

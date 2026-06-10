@@ -126,6 +126,7 @@ export function SignupForm({
                 required
               />
             </Field>
+            <div id="clerk-captcha" />
             <Field>
               <Button type="submit" disabled={loading}>
                 {loading ? "Verifying..." : "Verify Email"}
@@ -202,6 +203,7 @@ export function SignupForm({
               onChange={(e) => setLastName(e.target.value)}
             />
           </Field>
+          <div id="clerk-captcha" />
           <Field>
             <Button type="submit" disabled={loading}>
               {loading ? "Creating account..." : "Create Account"}
