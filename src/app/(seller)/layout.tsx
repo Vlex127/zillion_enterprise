@@ -9,14 +9,14 @@ export default function SellerLayout({
   return (
     <div className="flex min-h-screen flex-col">
       <header className="sticky top-0 flex h-14 items-center gap-4 border-b bg-background px-6">
-        <Link href="/seller/pos" className="font-semibold text-sm">
+        <Link href="/pos" className="font-semibold text-sm">
           Zillion POS
         </Link>
         <nav className="flex items-center gap-4 ml-8 text-sm">
-          <Link href="/seller/pos" className="text-muted-foreground hover:text-foreground transition-colors">
+          <Link href="/pos" className="text-muted-foreground hover:text-foreground transition-colors">
             New Sale
           </Link>
-          <Link href="/seller/daily-log" className="text-muted-foreground hover:text-foreground transition-colors">
+          <Link href="/daily-log" className="text-muted-foreground hover:text-foreground transition-colors">
             Daily Log
           </Link>
         </nav>

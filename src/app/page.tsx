@@ -12,11 +12,11 @@ export default async function Home() {
   const role = await getUserRole(userId)
 
   if (role === "admin") {
-    redirect("/admin/dashboard")
+    redirect("/dashboard")
   }
 
   if (role === "seller") {
-    redirect("/seller/pos")
+    redirect("/pos")
   }
 
   redirect("/login")

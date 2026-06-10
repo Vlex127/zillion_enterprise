@@ -22,10 +22,10 @@ import {
 } from "lucide-react"
 
 const navItems = [
-  { href: "/admin/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/admin/products", label: "Products", icon: Package },
-  { href: "/admin/staff", label: "Staff", icon: Users },
-  { href: "/admin/analytics", label: "Analytics", icon: BarChart3 },
+  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/products", label: "Products", icon: Package },
+  { href: "/staff", label: "Staff", icon: Users },
+  { href: "/analytics", label: "Analytics", icon: BarChart3 },
 ]
 
 export function AdminSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
