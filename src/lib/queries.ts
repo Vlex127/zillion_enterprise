@@ -20,6 +20,7 @@ export type Product = {
   name: string
   brand: string | null
   category: string | null
+  inventoryType: "SERIALIZED" | "BULK"
   cost_price: number
   retail_price: number
   bulk_stock: number
@@ -155,6 +156,7 @@ export async function createProduct(data: {
   name: string
   brand?: string
   category?: string
+  inventoryType: "SERIALIZED" | "BULK"
   cost_price: number
   retail_price: number
   bulk_stock: number
@@ -162,21 +164,25 @@ export async function createProduct(data: {
 }): Promise<Product> {
   await ensureDB()
 
+  const isSerialized = data.inventoryType === "SERIALIZED"
+  const stock = isSerialized ? (data.imeis?.length ?? 0) : data.bulk_stock
+
   const result = await db.execute({
-    sql: `INSERT INTO products (name, brand, category, cost_price, retail_price, bulk_stock)
-      VALUES (?, ?, ?, ?, ?, ?) RETURNING *`,
+    sql: `INSERT INTO products (name, brand, category, inventoryType, cost_price, retail_price, bulk_stock)
+      VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING *`,
     args: [
       data.name,
       data.brand ?? null,
       data.category ?? null,
+      data.inventoryType,
       data.cost_price,
       data.retail_price,
-      data.bulk_stock,
+      stock,
     ],
   })
   const product = mapProduct(result.rows[0])
 
-  if (data.imeis && data.imeis.length > 0) {
+  if (isSerialized && data.imeis && data.imeis.length > 0) {
     const placeholders = data.imeis.map(() => "(?, ?, ?)").join(", ")
     const flatArgs: any[] = []
     for (const imei of data.imeis) {
@@ -197,6 +203,7 @@ export async function updateProduct(
     name?: string
     brand?: string
     category?: string
+    inventoryType?: "SERIALIZED" | "BULK"
     cost_price?: number
     retail_price?: number
     bulk_stock?: number
@@ -210,6 +217,7 @@ export async function updateProduct(
   if (data.name !== undefined) { sets.push("name = ?"); args.push(data.name) }
   if (data.brand !== undefined) { sets.push("brand = ?"); args.push(data.brand) }
   if (data.category !== undefined) { sets.push("category = ?"); args.push(data.category) }
+  if (data.inventoryType !== undefined) { sets.push("inventoryType = ?"); args.push(data.inventoryType) }
   if (data.cost_price !== undefined) { sets.push("cost_price = ?"); args.push(data.cost_price) }
   if (data.retail_price !== undefined) { sets.push("retail_price = ?"); args.push(data.retail_price) }
   if (data.bulk_stock !== undefined) { sets.push("bulk_stock = ?"); args.push(data.bulk_stock) }
@@ -259,6 +267,12 @@ export async function createSale(data: {
 }): Promise<void> {
   await ensureDB()
 
+  const prodResult = await db.execute({
+    sql: `SELECT inventoryType FROM products WHERE id = ?`,
+    args: [data.product_id],
+  })
+  const inventoryType = prodResult.rows[0]?.inventoryType as string
+
   const result = await db.execute({
     sql: `INSERT INTO sales (product_id, seller_id, quantity, unit_price, total, cost_price, profit, payment_method)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
@@ -275,13 +289,7 @@ export async function createSale(data: {
   })
   const saleId = result.rows[0].id as string
 
-  const itemsExist = await db.execute({
-    sql: `SELECT COUNT(*) as cnt FROM product_items WHERE product_id = ?`,
-    args: [data.product_id],
-  })
-  const hasItems = Number(itemsExist.rows[0]?.cnt ?? 0) > 0
-
-  if (hasItems) {
+  if (inventoryType === "SERIALIZED") {
     const itemIds = data.item_ids && data.item_ids.length > 0
       ? data.item_ids
       : (await db.execute({
@@ -436,6 +444,7 @@ function mapProduct(row: any): Product {
     name: row.name as string,
     brand: (row.brand as string) ?? null,
     category: (row.category as string) ?? null,
+    inventoryType: (row.inventoryType as "SERIALIZED" | "BULK") ?? "BULK",
     cost_price: Number(row.cost_price),
     retail_price: Number(row.retail_price),
     bulk_stock: Number(row.bulk_stock),

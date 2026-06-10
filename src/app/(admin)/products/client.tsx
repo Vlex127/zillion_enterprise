@@ -23,7 +23,14 @@ import {
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
-import { Plus, Pencil, ChevronDown, ChevronRight, Smartphone, Package } from "lucide-react"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import { Plus, Pencil, ChevronDown, ChevronRight, Smartphone, Package, Barcode } from "lucide-react"
 import { useState } from "react"
 import { addProduct, editProduct } from "@/lib/actions"
 
@@ -32,6 +39,7 @@ type Product = {
   name: string
   brand: string | null
   category: string | null
+  inventoryType: "SERIALIZED" | "BULK"
   cost_price: number
   retail_price: number
   bulk_stock: number
@@ -44,14 +52,12 @@ function formatCurrency(n: number) {
 
 export function ProductsClient({ products }: { products: Product[] }) {
   const [addOpen, setAddOpen] = useState(false)
+  const [addType, setAddType] = useState<"BULK" | "SERIALIZED">("BULK")
   const [editingId, setEditingId] = useState<string | null>(null)
   const editingProduct = editingId ? products.find((p) => p.id === editingId) ?? null : null
   const [editOpen, setEditOpen] = useState(false)
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [imeiList, setImeiList] = useState<Record<string, { imei: string; status: string }[]>>({})
-
-  const isPhone = (cat: string | null) =>
-    cat?.toLowerCase() === "phone" || cat?.toLowerCase() === "phones"
 
   async function toggleExpand(productId: string) {
     if (expandedId === productId) {
@@ -85,8 +91,10 @@ export function ProductsClient({ products }: { products: Product[] }) {
           </DialogHeader>
           <form
             action={async (formData) => {
+              formData.set("inventoryType", addType)
               await addProduct(formData)
               setAddOpen(false)
+              setAddType("BULK")
             }}
           >
             <FieldGroup className="gap-4">
@@ -114,39 +122,54 @@ export function ProductsClient({ products }: { products: Product[] }) {
                   <Input id="retail_price" name="retail_price" type="number" required min="0" step="0.01" />
                 </Field>
               </div>
-              <div
-                data-category-watch
-                className="grid grid-cols-1 gap-4"
-              >
+              <Field>
+                <FieldLabel htmlFor="inventoryType">Inventory Type</FieldLabel>
+                <Select value={addType} onValueChange={(v) => setAddType((v ?? "BULK") as "BULK" | "SERIALIZED")}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="BULK">
+                      <span className="flex items-center gap-2">
+                        <Package className="size-3.5" />
+                        Bulk — counted by quantity (chargers, cases)
+                      </span>
+                    </SelectItem>
+                    <SelectItem value="SERIALIZED">
+                      <span className="flex items-center gap-2">
+                        <Barcode className="size-3.5" />
+                        Serialized — each unit tracked by IMEI (phones, tablets)
+                      </span>
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              </Field>
+              {addType === "BULK" ? (
                 <Field>
                   <FieldLabel htmlFor="bulk_stock">Stock Quantity</FieldLabel>
-                  <Input
-                    id="bulk_stock"
-                    name="bulk_stock"
-                    type="number"
-                    min="0"
-                    defaultValue="0"
+                  <Input id="bulk_stock" name="bulk_stock" type="number" min="0" defaultValue="0" />
+                </Field>
+              ) : (
+                <Field>
+                  <FieldLabel htmlFor="imeis">
+                    IMEI Numbers
+                    <span className="text-xs text-muted-foreground ml-2">
+                      (one per line)
+                    </span>
+                  </FieldLabel>
+                  <Textarea
+                    id="imeis"
+                    name="imeis"
+                    rows={6}
+                    placeholder={"359282104800001\n359282104800002\n359282104800003"}
+                    className="font-mono text-xs"
+                    required
                   />
                   <p className="text-xs text-muted-foreground mt-1">
-                    For phones, use the field below instead — one IMEI per unit.
+                    Each IMEI will be stored as an individual tracked unit. Duplicate IMEIs are rejected.
                   </p>
                 </Field>
-              </div>
-              <Field>
-                <FieldLabel htmlFor="imeis">
-                  IMEI Numbers
-                  <span className="text-xs text-muted-foreground ml-2">
-                    (one per line — for phones)
-                  </span>
-                </FieldLabel>
-                <Textarea
-                  id="imeis"
-                  name="imeis"
-                  rows={5}
-                  placeholder="123456789012345&#10;987654321098765"
-                  className="font-mono text-xs"
-                />
-              </Field>
+              )}
               <Button type="submit" className="mt-2">Save Product</Button>
             </FieldGroup>
           </form>
@@ -159,7 +182,7 @@ export function ProductsClient({ products }: { products: Product[] }) {
             <TableRow>
               <TableHead className="w-8"></TableHead>
               <TableHead>Name</TableHead>
-              <TableHead>Category</TableHead>
+              <TableHead>Type</TableHead>
               <TableHead>Cost</TableHead>
               <TableHead>Retail</TableHead>
               <TableHead>Margin</TableHead>
@@ -180,6 +203,7 @@ export function ProductsClient({ products }: { products: Product[] }) {
               const marginPercent = product.cost_price > 0
                 ? Math.round((margin / product.cost_price) * 100)
                 : 0
+              const isSerialized = product.inventoryType === "SERIALIZED"
               const expanded = expandedId === product.id
               const items = imeiList[product.id]
 
@@ -187,7 +211,7 @@ export function ProductsClient({ products }: { products: Product[] }) {
                 <>
                   <TableRow key={product.id} className={expanded ? "border-b-0" : ""}>
                     <TableCell>
-                      {isPhone(product.category) && (
+                      {isSerialized && (
                         <Button
                           variant="ghost"
                           size="icon"
@@ -203,7 +227,7 @@ export function ProductsClient({ products }: { products: Product[] }) {
                     </TableCell>
                     <TableCell className="font-medium">
                       <span className="flex items-center gap-2">
-                        {isPhone(product.category)
+                        {isSerialized
                           ? <Smartphone className="size-3.5 text-muted-foreground" />
                           : <Package className="size-3.5 text-muted-foreground" />
                         }
@@ -211,11 +235,14 @@ export function ProductsClient({ products }: { products: Product[] }) {
                       </span>
                     </TableCell>
                     <TableCell>
-                      {product.category && (
-                        <Badge className="border text-xs">
-                          {product.category}
-                        </Badge>
-                      )}
+                      <Badge
+                        className={`text-xs ${isSerialized
+                          ? "bg-blue-100 text-blue-700 border-blue-200"
+                          : "bg-gray-100 text-gray-700 border-gray-200"
+                        }`}
+                      >
+                        {isSerialized ? "SERIALIZED" : "BULK"}
+                      </Badge>
                     </TableCell>
                     <TableCell>{formatCurrency(product.cost_price)}</TableCell>
                     <TableCell>{formatCurrency(product.retail_price)}</TableCell>
@@ -314,21 +341,29 @@ export function ProductsClient({ products }: { products: Product[] }) {
                     <Input id="retail_price" name="retail_price" type="number" min="0" step="0.01" defaultValue={editingProduct.retail_price} />
                   </Field>
                 </div>
-                <Field>
-                  <FieldLabel htmlFor="imeis">
-                    Add New IMEI Numbers
-                    <span className="text-xs text-muted-foreground ml-2">
-                      (one per line — existing stock unchanged)
-                    </span>
-                  </FieldLabel>
-                  <Textarea
-                    id="imeis"
-                    name="imeis"
-                    rows={4}
-                    placeholder="123456789012345&#10;987654321098765"
-                    className="font-mono text-xs"
-                  />
-                </Field>
+                {editingProduct.inventoryType === "SERIALIZED" && (
+                  <Field>
+                    <FieldLabel htmlFor="imeis">
+                      Add New IMEI Numbers
+                      <span className="text-xs text-muted-foreground ml-2">
+                        (one per line — existing stock unchanged)
+                      </span>
+                    </FieldLabel>
+                    <Textarea
+                      id="imeis"
+                      name="imeis"
+                      rows={4}
+                      placeholder={"359282104800004\n359282104800005"}
+                      className="font-mono text-xs"
+                    />
+                  </Field>
+                )}
+                {editingProduct.inventoryType === "BULK" && (
+                  <Field>
+                    <FieldLabel htmlFor="bulk_stock">Stock Quantity</FieldLabel>
+                    <Input id="bulk_stock" name="bulk_stock" type="number" min="0" defaultValue={editingProduct.bulk_stock} />
+                  </Field>
+                )}
                 <Button type="submit" className="mt-2">Save Changes</Button>
               </FieldGroup>
             </form>

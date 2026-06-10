@@ -28,6 +28,7 @@ export async function ensureDB() {
         name TEXT NOT NULL,
         brand TEXT,
         category TEXT,
+        inventoryType TEXT NOT NULL DEFAULT 'BULK' CHECK (inventoryType IN ('SERIALIZED', 'BULK')),
         cost_price REAL NOT NULL,
         retail_price REAL NOT NULL,
         bulk_stock INTEGER NOT NULL DEFAULT 0,
