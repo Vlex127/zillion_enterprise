@@ -92,7 +92,7 @@ export function SignupForm({
       await signUp.sso({
         strategy: strategy as any,
         redirectUrl: "/",
-        redirectCallbackUrl: "/",
+        redirectCallbackUrl: "/sso-callback",
       })
     } catch (err: any) {
       setError(err.errors?.[0]?.message || "OAuth failed")
@@ -242,8 +242,8 @@ export function SignupForm({
       </form>
       <FieldDescription className="px-6 text-center">
         By clicking continue, you agree to our{" "}
-        <a href="#">Terms of Service</a> and{" "}
-        <a href="#">Privacy Policy</a>.
+        <a href="/terms" className="underline">Terms of Service</a> and{" "}
+        <a href="/privacy" className="underline">Privacy Policy</a>.
       </FieldDescription>
     </div>
   )

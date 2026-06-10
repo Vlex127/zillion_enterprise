@@ -58,7 +58,7 @@ export function LoginForm({
       await signIn.sso({
         strategy: strategy as any,
         redirectUrl: "/",
-        redirectCallbackUrl: "/",
+        redirectCallbackUrl: "/sso-callback",
       })
     } catch (err: any) {
       setError(err.errors?.[0]?.message || "OAuth failed")
