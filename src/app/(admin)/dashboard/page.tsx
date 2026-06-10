@@ -1,25 +1,18 @@
-import {
-  Breadcrumb,
-  BreadcrumbItem,
-  BreadcrumbList,
-  BreadcrumbPage,
-} from "@/components/ui/breadcrumb"
+import { getTodayMetrics, getLowStockProducts, getRecentSales } from "@/lib/queries"
+import { DashboardClient } from "./client"
 
-export default function AdminDashboardPage() {
+export default async function AdminDashboardPage() {
+  const [metrics, lowStock, sales] = await Promise.all([
+    getTodayMetrics(),
+    getLowStockProducts(),
+    getRecentSales(),
+  ])
+
   return (
-    <div>
-      <Breadcrumb>
-        <BreadcrumbList>
-          <BreadcrumbItem>
-            <BreadcrumbPage>Dashboard</BreadcrumbPage>
-          </BreadcrumbItem>
-        </BreadcrumbList>
-      </Breadcrumb>
-      <div className="grid auto-rows-min gap-4 md:grid-cols-5 mt-4">
-        {Array.from({ length: 20 }).map((_, i) => (
-          <div key={i} className="aspect-square rounded-xl bg-muted/50" />
-        ))}
-      </div>
-    </div>
+    <DashboardClient
+      metrics={metrics}
+      lowStock={lowStock}
+      sales={sales}
+    />
   )
 }

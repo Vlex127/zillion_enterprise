@@ -4,8 +4,12 @@ import {
   BreadcrumbList,
   BreadcrumbPage,
 } from "@/components/ui/breadcrumb"
+import { getAllProducts } from "@/lib/queries"
+import { ProductsClient } from "./client"
 
-export default function ProductsPage() {
+export default async function ProductsPage() {
+  const products = await getAllProducts()
+
   return (
     <div>
       <Breadcrumb>
@@ -15,7 +19,7 @@ export default function ProductsPage() {
           </BreadcrumbItem>
         </BreadcrumbList>
       </Breadcrumb>
-      <p className="text-muted-foreground mt-4">Product management coming soon.</p>
+      <ProductsClient products={products} />
     </div>
   )
 }

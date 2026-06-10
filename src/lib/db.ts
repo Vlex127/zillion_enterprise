@@ -16,4 +16,34 @@ export async function initDB() {
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     )
   `);
+
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS products (
+      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+      name TEXT NOT NULL,
+      brand TEXT,
+      category TEXT,
+      cost_price REAL NOT NULL,
+      retail_price REAL NOT NULL,
+      bulk_stock INTEGER NOT NULL DEFAULT 0,
+      imei TEXT UNIQUE,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS sales (
+      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+      product_id TEXT NOT NULL REFERENCES products(id),
+      seller_id TEXT NOT NULL REFERENCES users(id),
+      quantity INTEGER NOT NULL,
+      unit_price REAL NOT NULL,
+      total REAL NOT NULL,
+      cost_price REAL NOT NULL,
+      profit REAL NOT NULL,
+      payment_method TEXT NOT NULL CHECK (payment_method IN ('cash', 'transfer', 'pos')),
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
 }
