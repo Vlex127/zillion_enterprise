@@ -1,6 +1,8 @@
 import { getTodayMetrics, getLowStockProducts, getRecentSales } from "@/lib/queries"
 import { DashboardClient } from "./client"
 
+export const dynamic = "force-dynamic"
+
 export default async function AdminDashboardPage() {
   const [metrics, lowStock, sales] = await Promise.all([
     getTodayMetrics(),

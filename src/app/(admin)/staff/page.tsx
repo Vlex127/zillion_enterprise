@@ -2,6 +2,8 @@ import { Breadcrumb, BreadcrumbItem, BreadcrumbList, BreadcrumbPage } from "@/co
 import { getAllUsers } from "@/lib/queries"
 import { StaffClient } from "./client"
 
+export const dynamic = "force-dynamic"
+
 export default async function StaffPage() {
   const users = await getAllUsers()
 

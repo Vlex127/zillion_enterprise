@@ -2,6 +2,8 @@ import { Breadcrumb, BreadcrumbItem, BreadcrumbList, BreadcrumbPage } from "@/co
 import { getRevenueHistory, getTopProducts, getTodayMetrics } from "@/lib/queries"
 import { AnalyticsClient } from "./client"
 
+export const dynamic = "force-dynamic"
+
 export default async function AnalyticsPage() {
   const [revenueHistory, topProducts, metrics] = await Promise.all([
     getRevenueHistory(30),

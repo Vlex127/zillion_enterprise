@@ -40,6 +40,7 @@ export async function addProduct(formData: FormData) {
 
   await createProduct(data)
   revalidatePath("/products")
+  revalidatePath("/dashboard")
 }
 
 export async function editProduct(id: string, formData: FormData) {
@@ -80,6 +81,7 @@ export async function editProduct(id: string, formData: FormData) {
 
   await updateProduct(id, data as any)
   revalidatePath("/products")
+  revalidatePath("/dashboard")
 }
 
 export async function recordSale(formData: FormData) {
@@ -126,6 +128,8 @@ export async function recordSale(formData: FormData) {
   revalidatePath("/pos")
   revalidatePath("/daily-log")
   revalidatePath("/dashboard")
+  revalidatePath("/products")
+  revalidatePath("/analytics")
 }
 
 export async function changeUserRole(userId: string, role: "admin" | "seller") {
