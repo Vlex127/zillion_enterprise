@@ -31,7 +31,6 @@ export async function ensureDB() {
         cost_price REAL NOT NULL,
         retail_price REAL NOT NULL,
         bulk_stock INTEGER NOT NULL DEFAULT 0,
-        imei TEXT UNIQUE,
         created_at TEXT NOT NULL DEFAULT (datetime('now')),
         updated_at TEXT NOT NULL DEFAULT (datetime('now'))
       )
@@ -48,6 +47,17 @@ export async function ensureDB() {
         cost_price REAL NOT NULL,
         profit REAL NOT NULL,
         payment_method TEXT NOT NULL CHECK (payment_method IN ('cash', 'transfer', 'pos')),
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      )
+    `);
+
+    await db.execute(`
+      CREATE TABLE IF NOT EXISTS product_items (
+        id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+        product_id TEXT NOT NULL REFERENCES products(id),
+        imei TEXT UNIQUE,
+        status TEXT NOT NULL DEFAULT 'in_stock' CHECK (status IN ('in_stock', 'sold')),
+        sale_id TEXT REFERENCES sales(id),
         created_at TEXT NOT NULL DEFAULT (datetime('now'))
       )
     `);

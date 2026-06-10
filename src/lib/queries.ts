@@ -23,9 +23,17 @@ export type Product = {
   cost_price: number
   retail_price: number
   bulk_stock: number
-  imei: string | null
   created_at: string
   updated_at: string
+}
+
+export type ProductItem = {
+  id: string
+  product_id: string
+  imei: string | null
+  status: "in_stock" | "sold"
+  sale_id: string | null
+  created_at: string
 }
 
 export type DashboardMetrics = {
@@ -127,6 +135,22 @@ export async function getProduct(id: string): Promise<Product | null> {
   return result.rows[0] ? mapProduct(result.rows[0]) : null
 }
 
+export async function getProductItems(productId: string): Promise<ProductItem[]> {
+  await ensureDB()
+  const result = await db.execute({
+    sql: `SELECT * FROM product_items WHERE product_id = ? ORDER BY created_at DESC`,
+    args: [productId],
+  })
+  return result.rows.map((r) => ({
+    id: r.id as string,
+    product_id: r.product_id as string,
+    imei: (r.imei as string) ?? null,
+    status: r.status as "in_stock" | "sold",
+    sale_id: (r.sale_id as string) ?? null,
+    created_at: r.created_at as string,
+  }))
+}
+
 export async function createProduct(data: {
   name: string
   brand?: string
@@ -134,12 +158,13 @@ export async function createProduct(data: {
   cost_price: number
   retail_price: number
   bulk_stock: number
-  imei?: string
+  imeis?: string[]
 }): Promise<Product> {
   await ensureDB()
+
   const result = await db.execute({
-    sql: `INSERT INTO products (name, brand, category, cost_price, retail_price, bulk_stock, imei)
-      VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING *`,
+    sql: `INSERT INTO products (name, brand, category, cost_price, retail_price, bulk_stock)
+      VALUES (?, ?, ?, ?, ?, ?) RETURNING *`,
     args: [
       data.name,
       data.brand ?? null,
@@ -147,10 +172,23 @@ export async function createProduct(data: {
       data.cost_price,
       data.retail_price,
       data.bulk_stock,
-      data.imei ?? null,
     ],
   })
-  return mapProduct(result.rows[0])
+  const product = mapProduct(result.rows[0])
+
+  if (data.imeis && data.imeis.length > 0) {
+    const placeholders = data.imeis.map(() => "(?, ?, ?)").join(", ")
+    const flatArgs: any[] = []
+    for (const imei of data.imeis) {
+      flatArgs.push(product.id, imei, "in_stock")
+    }
+    await db.execute({
+      sql: `INSERT INTO product_items (product_id, imei, status) VALUES ${placeholders}`,
+      args: flatArgs,
+    })
+  }
+
+  return product
 }
 
 export async function updateProduct(
@@ -162,7 +200,7 @@ export async function updateProduct(
     cost_price?: number
     retail_price?: number
     bulk_stock?: number
-    imei?: string
+    newImeis?: string[]
   }
 ): Promise<Product> {
   await ensureDB()
@@ -175,7 +213,6 @@ export async function updateProduct(
   if (data.cost_price !== undefined) { sets.push("cost_price = ?"); args.push(data.cost_price) }
   if (data.retail_price !== undefined) { sets.push("retail_price = ?"); args.push(data.retail_price) }
   if (data.bulk_stock !== undefined) { sets.push("bulk_stock = ?"); args.push(data.bulk_stock) }
-  if (data.imei !== undefined) { sets.push("imei = ?"); args.push(data.imei) }
 
   sets.push("updated_at = datetime('now')")
 
@@ -183,18 +220,30 @@ export async function updateProduct(
     sql: `UPDATE products SET ${sets.join(", ")} WHERE id = ? RETURNING *`,
     args: [...args, id],
   })
-  return mapProduct(result.rows[0])
-}
 
-export async function getAdminSellers(): Promise<{ id: string; name: string }[]> {
-  await ensureDB()
-  const result = await db.execute({
-    sql: `SELECT id, COALESCE(first_name || ' ' || last_name, email) as name FROM users WHERE role = 'seller' ORDER BY name`,
-  })
-  return result.rows.map((r) => ({
-    id: r.id as string,
-    name: r.name as string,
-  }))
+  if (data.newImeis && data.newImeis.length > 0) {
+    const placeholders = data.newImeis.map(() => "(?, ?, ?)").join(", ")
+    const flatArgs: any[] = []
+    for (const imei of data.newImeis) {
+      flatArgs.push(id, imei, "in_stock")
+    }
+    await db.execute({
+      sql: `INSERT INTO product_items (product_id, imei, status) VALUES ${placeholders}`,
+      args: flatArgs,
+    })
+
+    const countResult = await db.execute({
+      sql: `SELECT COUNT(*) as cnt FROM product_items WHERE product_id = ? AND status = 'in_stock'`,
+      args: [id],
+    })
+    const newCount = Number(countResult.rows[0]?.cnt ?? 0)
+    await db.execute({
+      sql: `UPDATE products SET bulk_stock = ? WHERE id = ?`,
+      args: [newCount, id],
+    })
+  }
+
+  return mapProduct(result.rows[0])
 }
 
 export async function createSale(data: {
@@ -206,11 +255,13 @@ export async function createSale(data: {
   cost_price: number
   profit: number
   payment_method: "cash" | "transfer" | "pos"
+  item_ids?: string[]
 }): Promise<void> {
   await ensureDB()
-  await db.execute({
+
+  const result = await db.execute({
     sql: `INSERT INTO sales (product_id, seller_id, quantity, unit_price, total, cost_price, profit, payment_method)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
     args: [
       data.product_id,
       data.seller_id,
@@ -222,10 +273,53 @@ export async function createSale(data: {
       data.payment_method,
     ],
   })
-  await db.execute({
-    sql: `UPDATE products SET bulk_stock = bulk_stock - ?, updated_at = datetime('now') WHERE id = ?`,
-    args: [data.quantity, data.product_id],
+  const saleId = result.rows[0].id as string
+
+  const itemsExist = await db.execute({
+    sql: `SELECT COUNT(*) as cnt FROM product_items WHERE product_id = ?`,
+    args: [data.product_id],
   })
+  const hasItems = Number(itemsExist.rows[0]?.cnt ?? 0) > 0
+
+  if (hasItems) {
+    const itemIds = data.item_ids && data.item_ids.length > 0
+      ? data.item_ids
+      : (await db.execute({
+          sql: `SELECT id FROM product_items WHERE product_id = ? AND status = 'in_stock' ORDER BY created_at ASC LIMIT ?`,
+          args: [data.product_id, data.quantity],
+        })).rows.map((r) => r.id as string)
+
+    if (itemIds.length > 0) {
+      const placeholders = itemIds.map(() => "?").join(", ")
+      await db.execute({
+        sql: `UPDATE product_items SET status = 'sold', sale_id = ? WHERE id IN (${placeholders})`,
+        args: [saleId, ...itemIds],
+      })
+    }
+
+    await db.execute({
+      sql: `UPDATE products SET bulk_stock = (
+        SELECT COUNT(*) FROM product_items WHERE product_id = ? AND status = 'in_stock'
+      ), updated_at = datetime('now') WHERE id = ?`,
+      args: [data.product_id, data.product_id],
+    })
+  } else {
+    await db.execute({
+      sql: `UPDATE products SET bulk_stock = bulk_stock - ?, updated_at = datetime('now') WHERE id = ?`,
+      args: [data.quantity, data.product_id],
+    })
+  }
+}
+
+export async function getAdminSellers(): Promise<{ id: string; name: string }[]> {
+  await ensureDB()
+  const result = await db.execute({
+    sql: `SELECT id, COALESCE(first_name || ' ' || last_name, email) as name FROM users WHERE role = 'seller' ORDER BY name`,
+  })
+  return result.rows.map((r) => ({
+    id: r.id as string,
+    name: r.name as string,
+  }))
 }
 
 export async function getSellerSales(
@@ -345,7 +439,6 @@ function mapProduct(row: any): Product {
     cost_price: Number(row.cost_price),
     retail_price: Number(row.retail_price),
     bulk_stock: Number(row.bulk_stock),
-    imei: (row.imei as string) ?? null,
     created_at: row.created_at as string,
     updated_at: row.updated_at as string,
   }
