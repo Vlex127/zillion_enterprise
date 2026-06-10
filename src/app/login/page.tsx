@@ -1,12 +1,14 @@
 import { LoginForm } from "@/components/login-form"
 import { SignOutButton } from "@clerk/nextjs"
 import { auth } from "@clerk/nextjs/server"
+import { CartImage } from "@/components/cart-image"
 
 export default async function LoginPage() {
   const { userId } = await auth()
 
   return (
     <div className="flex min-h-svh flex-col items-center justify-center gap-6 bg-background p-6 md:p-10">
+      <CartImage />
       {userId && (
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <span>Signed in —</span>
