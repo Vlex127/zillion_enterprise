@@ -12,7 +12,7 @@ export function CartImage() {
 
   return (
     <img
-      src="/cart.png"
+      src="/cart.webp"
       alt=""
       className="pointer-events-none select-none"
       style={{
@@ -20,7 +20,7 @@ export function CartImage() {
         [side]: `${offset}%`,
         top: `${top}%`,
         width: "clamp(120px, 18vw, 260px)",
-        opacity: 0.08,
+        opacity: 0.4, 
       }}
     />
   )
