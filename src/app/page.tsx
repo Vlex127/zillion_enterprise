@@ -1,14 +1,15 @@
-import { currentUser } from "@clerk/nextjs/server"
+import { auth } from "@clerk/nextjs/server"
 import { redirect } from "next/navigation"
+import { getUserRole } from "@/lib/roles"
 
 export default async function Home() {
-  const user = await currentUser()
+  const { userId } = await auth()
 
-  if (!user) {
+  if (!userId) {
     redirect("/login")
   }
 
-  const role = user.publicMetadata.role as string | undefined
+  const role = await getUserRole(userId)
 
   if (role === "admin") {
     redirect("/admin/dashboard")

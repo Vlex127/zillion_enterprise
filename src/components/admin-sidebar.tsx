@@ -41,14 +41,12 @@ export function AdminSidebar({ ...props }: React.ComponentProps<typeof Sidebar>)
           {navItems.map((item) => (
             <SidebarMenuItem key={item.href}>
               <SidebarMenuButton
-                asChild
+                render={<Link href={item.href} />}
                 isActive={pathname === item.href}
                 tooltip={item.label}
               >
-                <Link href={item.href}>
-                  <item.icon />
-                  <span>{item.label}</span>
-                </Link>
+                <item.icon />
+                <span>{item.label}</span>
               </SidebarMenuButton>
             </SidebarMenuItem>
           ))}

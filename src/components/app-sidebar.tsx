@@ -45,7 +45,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   return (
     <Sidebar {...props}>
       <SidebarHeader className="h-16 border-b border-sidebar-border">
-        <NavUser user={data.user} />
+        <NavUser />
       </SidebarHeader>
       <SidebarContent>
         <DatePicker />
