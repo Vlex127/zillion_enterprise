@@ -5,7 +5,12 @@ export const db = createClient({
   authToken: process.env.DATABASE_TOKEN,
 });
 
-export async function initDB() {
+let initialized = false
+
+export async function ensureDB() {
+  if (initialized) return
+  initialized = true
+
   await db.execute(`
     CREATE TABLE IF NOT EXISTS users (
       id TEXT PRIMARY KEY,

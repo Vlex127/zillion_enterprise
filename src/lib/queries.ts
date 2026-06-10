@@ -1,4 +1,4 @@
-import { db } from "@/lib/db"
+import { db, ensureDB } from "@/lib/db"
 
 export type Sale = {
   id: string
@@ -37,6 +37,7 @@ export type DashboardMetrics = {
 }
 
 export async function getTodayMetrics(): Promise<DashboardMetrics> {
+  await ensureDB()
   const today = new Date().toISOString().split("T")[0]
   const result = await db.execute({
     sql: `SELECT
@@ -59,6 +60,7 @@ export async function getTodayMetrics(): Promise<DashboardMetrics> {
 }
 
 export async function getLowStockProducts(): Promise<Product[]> {
+  await ensureDB()
   const result = await db.execute({
     sql: `SELECT * FROM products WHERE bulk_stock < 5 ORDER BY bulk_stock ASC LIMIT 10`,
   })
@@ -72,6 +74,7 @@ export async function getRecentSales(
   paymentMethod?: string,
   sellerId?: string
 ): Promise<Sale[]> {
+  await ensureDB()
   const conditions: string[] = []
   const args: any[] = []
 
@@ -108,6 +111,7 @@ export async function getRecentSales(
 }
 
 export async function getAllProducts(): Promise<Product[]> {
+  await ensureDB()
   const result = await db.execute({
     sql: `SELECT * FROM products ORDER BY name ASC`,
   })
@@ -115,6 +119,7 @@ export async function getAllProducts(): Promise<Product[]> {
 }
 
 export async function getProduct(id: string): Promise<Product | null> {
+  await ensureDB()
   const result = await db.execute({
     sql: `SELECT * FROM products WHERE id = ?`,
     args: [id],
@@ -131,6 +136,7 @@ export async function createProduct(data: {
   bulk_stock: number
   imei?: string
 }): Promise<Product> {
+  await ensureDB()
   const result = await db.execute({
     sql: `INSERT INTO products (name, brand, category, cost_price, retail_price, bulk_stock, imei)
       VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING *`,
@@ -159,6 +165,7 @@ export async function updateProduct(
     imei?: string
   }
 ): Promise<Product> {
+  await ensureDB()
   const sets: string[] = []
   const args: any[] = []
 
@@ -180,6 +187,7 @@ export async function updateProduct(
 }
 
 export async function getAdminSellers(): Promise<{ id: string; name: string }[]> {
+  await ensureDB()
   const result = await db.execute({
     sql: `SELECT id, COALESCE(first_name || ' ' || last_name, email) as name FROM users WHERE role = 'seller' ORDER BY name`,
   })
