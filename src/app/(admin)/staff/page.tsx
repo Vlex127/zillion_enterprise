@@ -1,11 +1,10 @@
-import {
-  Breadcrumb,
-  BreadcrumbItem,
-  BreadcrumbList,
-  BreadcrumbPage,
-} from "@/components/ui/breadcrumb"
+import { Breadcrumb, BreadcrumbItem, BreadcrumbList, BreadcrumbPage } from "@/components/ui/breadcrumb"
+import { getAllUsers } from "@/lib/queries"
+import { StaffClient } from "./client"
 
-export default function StaffPage() {
+export default async function StaffPage() {
+  const users = await getAllUsers()
+
   return (
     <div>
       <Breadcrumb>
@@ -15,7 +14,7 @@ export default function StaffPage() {
           </BreadcrumbItem>
         </BreadcrumbList>
       </Breadcrumb>
-      <p className="text-muted-foreground mt-4">Staff management coming soon.</p>
+      <StaffClient users={users} />
     </div>
   )
 }

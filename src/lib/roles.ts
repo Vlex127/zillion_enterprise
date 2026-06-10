@@ -1,9 +1,10 @@
-import { db } from "@/lib/db";
+import { db, ensureDB } from "@/lib/db";
 import { auth } from "@clerk/nextjs/server";
 
 export type UserRole = "admin" | "seller";
 
 export async function getUserRole(userId: string): Promise<UserRole | null> {
+  await ensureDB()
   const result = await db.execute({
     sql: "SELECT role FROM users WHERE id = ?",
     args: [userId],
@@ -13,6 +14,7 @@ export async function getUserRole(userId: string): Promise<UserRole | null> {
 }
 
 export async function setUserRole(userId: string, role: UserRole) {
+  await ensureDB()
   await db.execute({
     sql: "UPDATE users SET role = ? WHERE id = ?",
     args: [role, userId],

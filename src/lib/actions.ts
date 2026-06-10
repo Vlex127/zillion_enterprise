@@ -1,7 +1,9 @@
 "use server"
 
-import { createProduct, updateProduct } from "@/lib/queries"
+import { createProduct, updateProduct, createSale } from "@/lib/queries"
 import { revalidatePath } from "next/cache"
+import { auth } from "@clerk/nextjs/server"
+import { setUserRole } from "@/lib/roles"
 
 export async function addProduct(formData: FormData) {
   const data = {
@@ -44,4 +46,38 @@ export async function editProduct(id: string, formData: FormData) {
 
   await updateProduct(id, data as any)
   revalidatePath("/products")
+}
+
+export async function recordSale(formData: FormData) {
+  const { userId } = await auth()
+  if (!userId) throw new Error("Unauthorized")
+
+  const product_id = formData.get("product_id") as string
+  const quantity = parseInt(formData.get("quantity") as string)
+  const unit_price = parseFloat(formData.get("unit_price") as string)
+  const cost_price = parseFloat(formData.get("cost_price") as string)
+  const payment_method = formData.get("payment_method") as "cash" | "transfer" | "pos"
+
+  const total = quantity * unit_price
+  const profit = quantity * (unit_price - cost_price)
+
+  await createSale({
+    product_id,
+    seller_id: userId,
+    quantity,
+    unit_price,
+    total,
+    cost_price: cost_price * quantity,
+    profit,
+    payment_method,
+  })
+
+  revalidatePath("/pos")
+  revalidatePath("/daily-log")
+  revalidatePath("/dashboard")
+}
+
+export async function changeUserRole(userId: string, role: "admin" | "seller") {
+  await setUserRole(userId, role)
+  revalidatePath("/staff")
 }

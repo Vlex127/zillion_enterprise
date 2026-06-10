@@ -197,6 +197,145 @@ export async function getAdminSellers(): Promise<{ id: string; name: string }[]>
   }))
 }
 
+export async function createSale(data: {
+  product_id: string
+  seller_id: string
+  quantity: number
+  unit_price: number
+  total: number
+  cost_price: number
+  profit: number
+  payment_method: "cash" | "transfer" | "pos"
+}): Promise<void> {
+  await ensureDB()
+  await db.execute({
+    sql: `INSERT INTO sales (product_id, seller_id, quantity, unit_price, total, cost_price, profit, payment_method)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    args: [
+      data.product_id,
+      data.seller_id,
+      data.quantity,
+      data.unit_price,
+      data.total,
+      data.cost_price,
+      data.profit,
+      data.payment_method,
+    ],
+  })
+  await db.execute({
+    sql: `UPDATE products SET bulk_stock = bulk_stock - ?, updated_at = datetime('now') WHERE id = ?`,
+    args: [data.quantity, data.product_id],
+  })
+}
+
+export async function getSellerSales(
+  sellerId: string,
+  dateFrom?: string,
+  dateTo?: string
+): Promise<Sale[]> {
+  await ensureDB()
+  const conditions: string[] = ["s.seller_id = ?"]
+  const args: any[] = [sellerId]
+
+  if (dateFrom) {
+    conditions.push("date(s.created_at) >= ?")
+    args.push(dateFrom)
+  }
+  if (dateTo) {
+    conditions.push("date(s.created_at) <= ?")
+    args.push(dateTo)
+  }
+
+  const where = `WHERE ${conditions.join(" AND ")}`
+
+  const result = await db.execute({
+    sql: `SELECT s.*, p.name as product_name,
+      COALESCE(u.first_name || ' ' || u.last_name, u.email) as seller_name
+    FROM sales s
+    JOIN products p ON s.product_id = p.id
+    LEFT JOIN users u ON s.seller_id = u.id
+    ${where}
+    ORDER BY s.created_at DESC LIMIT 100`,
+    args,
+  })
+  return result.rows.map(mapSale)
+}
+
+export type User = {
+  id: string
+  email: string
+  first_name: string | null
+  last_name: string | null
+  role: string
+  created_at: string
+}
+
+export async function getAllUsers(): Promise<User[]> {
+  await ensureDB()
+  const result = await db.execute({
+    sql: `SELECT * FROM users ORDER BY created_at DESC`,
+  })
+  return result.rows.map((r) => ({
+    id: r.id as string,
+    email: r.email as string,
+    first_name: (r.first_name as string) ?? null,
+    last_name: (r.last_name as string) ?? null,
+    role: r.role as string,
+    created_at: r.created_at as string,
+  }))
+}
+
+export type DailyRevenue = {
+  date: string
+  revenue: number
+  profit: number
+}
+
+export async function getRevenueHistory(days = 30): Promise<DailyRevenue[]> {
+  await ensureDB()
+  const result = await db.execute({
+    sql: `SELECT date(created_at) as date,
+      COALESCE(SUM(total), 0) as revenue,
+      COALESCE(SUM(profit), 0) as profit
+    FROM sales
+    WHERE created_at >= datetime('now', ?)
+    GROUP BY date(created_at)
+    ORDER BY date ASC`,
+    args: [`-${days} days`],
+  })
+  return result.rows.map((r) => ({
+    date: r.date as string,
+    revenue: Number(r.revenue),
+    profit: Number(r.profit),
+  }))
+}
+
+export type ProductSummary = {
+  name: string
+  total_qty: number
+  total_revenue: number
+}
+
+export async function getTopProducts(limit = 10): Promise<ProductSummary[]> {
+  await ensureDB()
+  const result = await db.execute({
+    sql: `SELECT p.name,
+      SUM(s.quantity) as total_qty,
+      SUM(s.total) as total_revenue
+    FROM sales s
+    JOIN products p ON s.product_id = p.id
+    GROUP BY s.product_id
+    ORDER BY total_revenue DESC
+    LIMIT ?`,
+    args: [limit],
+  })
+  return result.rows.map((r) => ({
+    name: r.name as string,
+    total_qty: Number(r.total_qty),
+    total_revenue: Number(r.total_revenue),
+  }))
+}
+
 function mapProduct(row: any): Product {
   return {
     id: row.id as string,

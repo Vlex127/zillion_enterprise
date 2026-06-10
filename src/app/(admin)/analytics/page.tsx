@@ -1,11 +1,14 @@
-import {
-  Breadcrumb,
-  BreadcrumbItem,
-  BreadcrumbList,
-  BreadcrumbPage,
-} from "@/components/ui/breadcrumb"
+import { Breadcrumb, BreadcrumbItem, BreadcrumbList, BreadcrumbPage } from "@/components/ui/breadcrumb"
+import { getRevenueHistory, getTopProducts, getTodayMetrics } from "@/lib/queries"
+import { AnalyticsClient } from "./client"
 
-export default function AnalyticsPage() {
+export default async function AnalyticsPage() {
+  const [revenueHistory, topProducts, metrics] = await Promise.all([
+    getRevenueHistory(30),
+    getTopProducts(10),
+    getTodayMetrics(),
+  ])
+
   return (
     <div>
       <Breadcrumb>
@@ -15,7 +18,11 @@ export default function AnalyticsPage() {
           </BreadcrumbItem>
         </BreadcrumbList>
       </Breadcrumb>
-      <p className="text-muted-foreground mt-4">Analytics coming soon.</p>
+      <AnalyticsClient
+        revenueHistory={revenueHistory}
+        topProducts={topProducts}
+        metrics={metrics}
+      />
     </div>
   )
 }
