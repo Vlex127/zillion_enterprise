@@ -85,7 +85,10 @@ export function POSClient({
 }) {
   const router = useRouter()
   const searchRef = useRef<HTMLInputElement>(null)
+  const scanRef = useRef<HTMLInputElement>(null)
   const [search, setSearch] = useState("")
+  const [scanInput, setScanInput] = useState("")
+  const [scanMsg, setScanMsg] = useState<{ type: "ok" | "err"; text: string } | null>(null)
   const [cart, setCart] = useState<CartItem[]>([])
   const [paymentMethod, setPaymentMethod] = useState("cash")
   const [submitting, setSubmitting] = useState(false)
@@ -135,6 +138,40 @@ export function POSClient({
     }
     setSearch("")
     searchRef.current?.focus()
+  }
+
+  async function handleIMEIScan(imei: string) {
+    setScanInput(imei)
+    setScanMsg(null)
+    try {
+      const res = await fetch(`/api/imei/lookup?imei=${encodeURIComponent(imei)}`)
+      const data = await res.json()
+      if (data.found && data.product) {
+        const p = data.product as Product
+        if (cartQty(p.id) >= p.bulk_stock) {
+          setScanMsg({ type: "err", text: `${p.name} — all in stock already in cart` })
+          return
+        }
+
+        setCart((prev) => [
+          ...prev,
+          {
+            product: p,
+            quantity: 1,
+            imei,
+            imeiItemId: data.itemId,
+            imeiStatus: "valid",
+          },
+        ])
+        setSearch("")
+        setScanMsg({ type: "ok", text: `Added ${p.name} (IMEI verified)` })
+        setTimeout(() => setScanMsg(null), 2500)
+      } else {
+        setScanMsg({ type: "err", text: "IMEI not found or already sold" })
+      }
+    } catch {
+      setScanMsg({ type: "err", text: "Lookup failed" })
+    }
   }
 
   function updateQuantity(productId: string, delta: number) {
@@ -240,6 +277,40 @@ export function POSClient({
             className="h-12 pl-10 pr-4 text-base"
             autoFocus
           />
+        </div>
+
+        {/* ─── IMEI Scan Bar ─── */}
+        <div className="flex items-center gap-2 rounded-xl border bg-muted/30 p-2">
+          <div className="relative flex-1">
+            <ScanLine className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              ref={scanRef}
+              value={scanInput}
+              onChange={(e) => {
+                const v = e.target.value
+                setScanInput(v)
+                setScanMsg(null)
+                if (v.length >= 8) handleIMEIScan(v)
+              }}
+              placeholder="Scan IMEI to auto-add product..."
+              className="h-10 pl-10 pr-4 font-mono text-sm"
+            />
+          </div>
+          <IMEIScanner
+            onDetect={(value) => {
+              if (scanRef.current) scanRef.current.value = value
+              handleIMEIScan(value)
+            }}
+          />
+          {scanMsg && (
+            <span
+              className={`shrink-0 text-xs font-medium ${
+                scanMsg.type === "ok" ? "text-green-600" : "text-destructive"
+              }`}
+            >
+              {scanMsg.text}
+            </span>
+          )}
         </div>
 
         <div className="flex-1 overflow-y-auto space-y-4">

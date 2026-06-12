@@ -157,6 +157,26 @@ export async function getProductItems(productId: string): Promise<ProductItem[]>
   }))
 }
 
+export async function lookupIMEI(
+  imei: string
+): Promise<{ itemId: string; product: Product } | null> {
+  await ensureDB()
+  const result = await db.execute({
+    sql: `SELECT pi.id as item_id, pi.status as item_status, p.id, p.name, p.brand, p.category, p.inventoryType, p.cost_price, p.retail_price, p.bulk_stock, p.created_at, p.updated_at
+      FROM product_items pi
+      JOIN products p ON pi.product_id = p.id
+      WHERE pi.imei = ?`,
+    args: [imei],
+  })
+  if (result.rows.length === 0) return null
+  const row = result.rows[0]
+  if (row.item_status !== "in_stock") return null
+  return {
+    itemId: row.item_id as string,
+    product: mapProduct(row),
+  }
+}
+
 export async function createProduct(data: {
   name: string
   brand?: string
