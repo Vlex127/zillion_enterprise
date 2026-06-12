@@ -22,7 +22,7 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar"
 import { ChevronsUpDownIcon, LogOutIcon, UserIcon } from "lucide-react"
-import { SignOutButton, useClerk } from "@clerk/nextjs"
+import { useClerk } from "@clerk/nextjs"
 
 export function NavUser({ standalone }: { standalone?: boolean }) {
   const sidebar = !standalone ? useSidebar() : null
@@ -71,13 +71,9 @@ export function NavUser({ standalone }: { standalone?: boolean }) {
         </DropdownMenuItem>
       </DropdownMenuGroup>
       <DropdownMenuSeparator />
-      <DropdownMenuItem>
-        <SignOutButton>
-          <div className="flex items-center gap-2">
-            <LogOutIcon />
-            Sign out
-          </div>
-        </SignOutButton>
+      <DropdownMenuItem onClick={() => clerk.signOut()}>
+        <LogOutIcon />
+        Sign out
       </DropdownMenuItem>
     </DropdownMenuContent>
   )
