@@ -4,6 +4,7 @@ import { useUser } from "@clerk/nextjs"
 import {
   Avatar,
   AvatarFallback,
+  AvatarImage,
 } from "@/components/ui/avatar"
 import {
   DropdownMenu,
@@ -20,12 +21,14 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from "@/components/ui/sidebar"
-import { ChevronsUpDownIcon, BadgeCheckIcon, LogOutIcon } from "lucide-react"
-import { SignOutButton } from "@clerk/nextjs"
+import { ChevronsUpDownIcon, LogOutIcon, UserIcon } from "lucide-react"
+import { SignOutButton, useClerk } from "@clerk/nextjs"
 
-export function NavUser() {
-  const { isMobile } = useSidebar()
+export function NavUser({ standalone }: { standalone?: boolean }) {
+  const sidebar = !standalone ? useSidebar() : null
+  const isMobile = sidebar?.isMobile ?? false
   const { user } = useUser()
+  const clerk = useClerk()
 
   if (!user) return null
 
@@ -35,16 +38,73 @@ export function NavUser() {
     "U"
   )
 
+  const dropdown = (
+    <DropdownMenuContent
+      className="min-w-56 rounded-lg"
+      side={isMobile ? "bottom" : "right"}
+      align="end"
+      sideOffset={4}
+    >
+      <DropdownMenuGroup>
+        <DropdownMenuLabel className="p-0 font-normal">
+          <div className="flex items-center gap-2 px-1 py-1.5 text-left text-sm">
+            <Avatar className="size-8">
+              <AvatarImage src={user.imageUrl} />
+              <AvatarFallback>{initials}</AvatarFallback>
+            </Avatar>
+            <div className="grid flex-1 text-left text-sm leading-tight">
+              <span className="truncate font-medium">
+                {user.firstName} {user.lastName}
+              </span>
+              <span className="truncate text-xs">
+                {user.primaryEmailAddress?.emailAddress}
+              </span>
+            </div>
+          </div>
+        </DropdownMenuLabel>
+      </DropdownMenuGroup>
+      <DropdownMenuSeparator />
+      <DropdownMenuGroup>
+        <DropdownMenuItem onClick={() => clerk.openUserProfile()}>
+          <UserIcon />
+          Manage Account
+        </DropdownMenuItem>
+      </DropdownMenuGroup>
+      <DropdownMenuSeparator />
+      <DropdownMenuItem>
+        <SignOutButton>
+          <div className="flex items-center gap-2">
+            <LogOutIcon />
+            Sign out
+          </div>
+        </SignOutButton>
+      </DropdownMenuItem>
+    </DropdownMenuContent>
+  )
+
+  if (standalone) {
+    return (
+      <DropdownMenu>
+        <DropdownMenuTrigger className="cursor-pointer">
+          <Avatar className="size-7">
+            <AvatarImage src={user.imageUrl} />
+            <AvatarFallback>{initials}</AvatarFallback>
+          </Avatar>
+        </DropdownMenuTrigger>
+        {dropdown}
+      </DropdownMenu>
+    )
+  }
+
   return (
     <SidebarMenu>
       <SidebarMenuItem>
         <DropdownMenu>
           <DropdownMenuTrigger
-            render={
-              <SidebarMenuButton size="lg" className="aria-expanded:bg-muted" />
-            }
+            render={<SidebarMenuButton size="lg" className="aria-expanded:bg-muted" />}
           >
-            <Avatar>
+            <Avatar className="size-8">
+              <AvatarImage src={user.imageUrl} />
               <AvatarFallback>{initials}</AvatarFallback>
             </Avatar>
             <div className="grid flex-1 text-left text-sm leading-tight">
@@ -57,46 +117,7 @@ export function NavUser() {
             </div>
             <ChevronsUpDownIcon className="ml-auto size-4" />
           </DropdownMenuTrigger>
-          <DropdownMenuContent
-            className="min-w-56 rounded-lg"
-            side={isMobile ? "bottom" : "right"}
-            align="start"
-            sideOffset={4}
-          >
-            <DropdownMenuGroup>
-              <DropdownMenuLabel className="p-0 font-normal">
-                <div className="flex items-center gap-2 px-1 py-1.5 text-left text-sm">
-                  <Avatar>
-                    <AvatarFallback>{initials}</AvatarFallback>
-                  </Avatar>
-                  <div className="grid flex-1 text-left text-sm leading-tight">
-                    <span className="truncate font-medium">
-                      {user.firstName} {user.lastName}
-                    </span>
-                    <span className="truncate text-xs">
-                      {user.primaryEmailAddress?.emailAddress}
-                    </span>
-                  </div>
-                </div>
-              </DropdownMenuLabel>
-            </DropdownMenuGroup>
-            <DropdownMenuSeparator />
-            <DropdownMenuGroup>
-              <DropdownMenuItem>
-                <BadgeCheckIcon />
-                Account
-              </DropdownMenuItem>
-            </DropdownMenuGroup>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem>
-              <SignOutButton>
-                <div className="flex items-center gap-2">
-                  <LogOutIcon />
-                  Log out
-                </div>
-              </SignOutButton>
-            </DropdownMenuItem>
-          </DropdownMenuContent>
+          {dropdown}
         </DropdownMenu>
       </SidebarMenuItem>
     </SidebarMenu>

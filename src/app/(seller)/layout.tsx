@@ -1,4 +1,4 @@
-import { UserButton } from "@clerk/nextjs"
+import { NavUser } from "@/components/nav-user"
 import Link from "next/link"
 
 export default function SellerLayout({
@@ -21,13 +21,7 @@ export default function SellerLayout({
           </Link>
         </nav>
         <div className="ml-auto">
-          <UserButton
-            appearance={{
-              elements: {
-                avatarBox: "size-7",
-              },
-            }}
-          />
+          <NavUser standalone />
         </div>
       </header>
       <main className="flex-1 p-6">

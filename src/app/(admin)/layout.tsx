@@ -5,7 +5,7 @@ import {
   SidebarTrigger,
 } from "@/components/ui/sidebar"
 import { Separator } from "@/components/ui/separator"
-import { UserButton } from "@clerk/nextjs"
+import { NavUser } from "@/components/nav-user"
 
 export default function AdminLayout({
   children,
@@ -23,13 +23,7 @@ export default function AdminLayout({
             className="mr-2 data-vertical:h-4 data-vertical:self-auto"
           />
           <div className="ml-auto">
-            <UserButton
-              appearance={{
-                elements: {
-                  avatarBox: "size-8",
-                },
-              }}
-            />
+            <NavUser standalone />
           </div>
         </header>
         <div className="flex flex-1 flex-col p-4">
