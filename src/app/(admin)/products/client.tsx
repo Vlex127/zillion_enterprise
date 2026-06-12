@@ -30,8 +30,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { IMEIScanner } from "@/components/imei-scanner"
 import { Plus, Pencil, ChevronDown, ChevronRight, Smartphone, Package, Barcode } from "lucide-react"
-import { useState } from "react"
+import { useRef, useState } from "react"
 import { addProduct, editProduct } from "@/lib/actions"
 
 type Product = {
@@ -53,6 +54,8 @@ function formatCurrency(n: number) {
 export function ProductsClient({ products }: { products: Product[] }) {
   const [addOpen, setAddOpen] = useState(false)
   const [addType, setAddType] = useState<"BULK" | "SERIALIZED">("BULK")
+  const [imeiText, setImeiText] = useState("")
+  const imeiRef = useRef<HTMLTextAreaElement>(null)
   const [editingId, setEditingId] = useState<string | null>(null)
   const editingProduct = editingId ? products.find((p) => p.id === editingId) ?? null : null
   const [editOpen, setEditOpen] = useState(false)
@@ -78,13 +81,13 @@ export function ProductsClient({ products }: { products: Product[] }) {
         <p className="text-sm text-muted-foreground">
           {products.length} product{products.length !== 1 ? "s" : ""} registered
         </p>
-        <Button onClick={() => setAddOpen(true)}>
+        <Button onClick={() => { setAddOpen(true); setImeiText(""); setAddType("BULK") }}>
           <Plus className="size-4 mr-2" />
           Add Product
         </Button>
       </div>
 
-      <Dialog open={addOpen} onOpenChange={setAddOpen}>
+      <Dialog open={addOpen} onOpenChange={(v) => { setAddOpen(v); if (!v) { setImeiText(""); setAddType("BULK") } }}>
         <DialogContent className="sm:max-w-xl">
           <DialogHeader>
             <DialogTitle>Add Product</DialogTitle>
@@ -160,11 +163,35 @@ export function ProductsClient({ products }: { products: Product[] }) {
                   <Textarea
                     id="imeis"
                     name="imeis"
+                    ref={imeiRef}
                     rows={6}
+                    value={imeiText}
+                    onChange={(e) => setImeiText(e.target.value)}
                     placeholder={"359282104800001\n359282104800002\n359282104800003"}
                     className="font-mono text-xs"
                     required
                   />
+                  <div className="flex items-center gap-2 mt-1.5">
+                    <IMEIScanner
+                      onDetect={(value) => {
+                        setImeiText((prev) => {
+                          const lines = prev.split("\n").filter(Boolean)
+                          if (!lines.includes(value)) {
+                            return [...lines, value].join("\n") + "\n"
+                          }
+                          return prev
+                        })
+                        setTimeout(() => {
+                          if (imeiRef.current) {
+                            imeiRef.current.scrollTop = imeiRef.current.scrollHeight
+                          }
+                        }, 0)
+                      }}
+                    />
+                    <span className="text-xs text-muted-foreground">
+                      scan to append
+                    </span>
+                  </div>
                   <p className="text-xs text-muted-foreground mt-1">
                     Each IMEI will be stored as an individual tracked unit. Duplicate IMEIs are rejected.
                   </p>
