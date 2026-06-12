@@ -1,9 +1,11 @@
 import { Webhook } from "svix";
 import { headers } from "next/headers";
 import type { WebhookEvent } from "@clerk/nextjs/server";
-import { db } from "@/lib/db";
+import { db, ensureDB } from "@/lib/db";
 
 export async function POST(req: Request) {
+  await ensureDB()
+
   const WEBHOOK_SECRET = process.env.CLERK_WEBHOOK_SECRET;
 
   if (!WEBHOOK_SECRET) {

@@ -25,7 +25,8 @@ import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { useState } from "react"
 import { recordSale } from "@/lib/actions"
-import { ShoppingCart, Barcode, Package, CheckCircle, XCircle, Loader2 } from "lucide-react"
+import { IMEIScanner } from "@/components/imei-scanner"
+import { ShoppingCart, Barcode, Package, CheckCircle, XCircle, Loader2, ScanLine } from "lucide-react"
 import { useRouter } from "next/navigation"
 
 type Product = {
@@ -237,6 +238,17 @@ export function POSClient({
                           {imeiStatus === "checking" && <Loader2 className="size-4 animate-spin text-muted-foreground" />}
                           {imeiStatus === "valid" && <CheckCircle className="size-4 text-green-600" />}
                           {imeiStatus === "invalid" && <XCircle className="size-4 text-destructive" />}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2 mt-1.5">
+                        <IMEIScanner
+                          onDetect={(value) => {
+                            setImei(value)
+                            checkImei(value)
+                          }}
+                        />
+                        <span className="text-xs text-muted-foreground">
+                          or type manually
                         </span>
                       </div>
                       {imeiStatus === "valid" && (

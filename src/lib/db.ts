@@ -10,7 +10,7 @@ let initPromise: Promise<void> | null = null
 export async function ensureDB() {
   if (initPromise) return initPromise
 
-  initPromise = (async () => {
+  const promise = (async () => {
     await db.execute(`
       CREATE TABLE IF NOT EXISTS users (
         id TEXT PRIMARY KEY,
@@ -65,9 +65,14 @@ export async function ensureDB() {
 
     const cols = await db.execute(`SELECT COUNT(*) as cnt FROM pragma_table_info('products') WHERE name = 'inventoryType'`)
     if (Number(cols.rows[0]?.cnt ?? 0) === 0) {
-      await db.execute(`ALTER TABLE products ADD COLUMN inventoryType TEXT NOT NULL DEFAULT 'BULK' CHECK (inventoryType IN ('SERIALIZED', 'BULK'))`)
+      await db.execute(`ALTER TABLE products ADD COLUMN inventoryType TEXT NOT NULL DEFAULT 'BULK'`)
     }
   })()
+
+  initPromise = promise.catch((err) => {
+    initPromise = null
+    throw err
+  })
 
   return initPromise
 }

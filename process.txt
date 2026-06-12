@@ -1,0 +1,944 @@
+================================================================================
+  ZILLION ENTERPRISE — COMPLETE PROCESS DOCUMENTATION
+================================================================================
+
+A two-role (Admin / Seller) enterprise management platform built on Next.js 16
+with Clerk authentication, Turso (libSQL) database, and shadcn/ui components.
+
+Table of Contents
+─────────────────
+1.  Authentication Flow
+2.  Authorization & Role Management
+3.  Route Protection (Middleware)
+4.  User Sync (Clerk Webhook)
+5.  Database Schema & Migration
+6.  Root Redirect Logic
+7.  Admin Panel
+    7a. Admin Layout
+    7b. Dashboard
+    7c. Products
+    7d. Staff
+    7e. Analytics
+8.  Seller POS
+    8a. Seller Layout
+    8b. Point of Sale (POS)
+    8c. Daily Log
+9.  Server Actions
+10. API Routes
+11. Reusable Utilities
+12. UI Component Library
+13. Critical Files Index
+
+
+================================================================================
+1. AUTHENTICATION FLOW
+================================================================================
+
+Stack: Clerk (@clerk/nextjs v7)
+
+The authentication entry point is the root layout at src/app/layout.tsx which
+wraps the entire app in <ClerkProvider>. Clerk manages session cookies, token
+refresh, and user identity automatically.
+
+┌──────────────────────────────────────────────────────────────────────────┐
+│  src/app/layout.tsx                                                      │
+│                                                                          │
+│  - Imports Geist & Geist_Mono fonts from next/font/google               │
+│  - Imports ClerkProvider from @clerk/nextjs                             │
+│  - Wraps <html> in ClerkProvider — all children have auth context       │
+│  - Sets global CSS variables for Geist fonts                            │
+└──────────────────────────────────────────────────────────────────────────┘
+
+Login / Signup pages use Clerk's prebuilt components:
+
+┌──────────────────────────────────────────────────────────────────────────┐
+│  src/app/login/page.tsx                                                  │
+│                                                                          │
+│  - Renders Clerk's <SignIn /> component with:                           │
+│    - routing="path" / path="/login" / signUpUrl="/signup"               │
+│  - If user is already signed in, shows a "Signed in — Sign out" link    │
+│  - Also renders CartImage component for branding visual                 │
+└──────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────┐
+│  src/app/signup/page.tsx                                                 │
+│                                                                          │
+│  - Renders Clerk's <SignUp /> component with:                           │
+│    - routing="path" / path="/signup" / signInUrl="/login"               │
+│  - Also renders CartImage component                                     │
+└──────────────────────────────────────────────────────────────────────────┘
+
+On every page, the UserButton (from Clerk) or NavUser component provides
+user profile access and sign-out functionality:
+
+
+┌──────────────────────────────────────────────────────────────────────────┐
+│  src/components/nav-user.tsx  (used in admin sidebar)                   │
+│                                                                          │
+│  - Uses useUser() from @clerk/nextjs to get the current user           │
+│  - Displays avatar initials and full name / email                       │
+│  - Dropdown menu with Account link and Sign Out button                  │
+│  - Uses SignOutButton from @clerk/nextjs in a DropdownMenuItem          │
+│  - Returns null if no user is loaded (hydration guard)                  │
+└──────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────┐
+│  src/components/login-form.tsx  (fallback custom form)                   │
+│                                                                          │
+│  - Client component with email input and login button                   │
+│  - Branding with GalleryVerticalEndIcon                                 │
+│  - "Or" separator with Apple & Google social buttons                    │
+│  - Terms-of-service / privacy policy footer                             │
+│  NOTE: Currently decorative — real sign-in is handled by Clerk's        │
+│  <SignIn /> component in login/page.tsx. This form can be removed or    │
+│  adapted for alternative use.                                           │
+└──────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────┐
+│  src/components/signup-form.tsx  (fallback custom form)                  │
+│                                                                          │
+│  - Mirrors login-form.tsx but for account creation                      │
+│  - Similarly decorative — real sign-up goes through Clerk's <SignUp />  │
+└──────────────────────────────────────────────────────────────────────────┘
+
+
+================================================================================
+2. AUTHORIZATION & ROLE MANAGEMENT
+================================================================================
+
+Roles are stored in the Turso database (users.role column), NOT in Clerk
+metadata. The role-checking functions live in src/lib/roles.ts.
+
+┌──────────────────────────────────────────────────────────────────────────┐
+│  src/lib/roles.ts                                                        │
+│                                                                          │
+│  Types:                                                                  │
+│    UserRole = "admin" | "seller"                                         │
+│                                                                          │
+│  Functions:                                                              │
+│    getUserRole(userId: string): Promise<UserRole | null>                 │
+│      - Calls ensureDB() to guarantee the users table exists             │
+│      - Queries: SELECT role FROM users WHERE id = ?                     │
+│      - Returns role string or null if user not found                    │
+│                                                                          │
+│    setUserRole(userId: string, role: UserRole): Promise<void>           │
+│      - Updates the role column in the users table                       │
+│      - Called by changeUserRole server action (staff management)        │
+│                                                                          │
+│    requireRole(role: UserRole): Promise<void | Response>                │
+│      - Utility for page-level role checks                               │
+│      - If no userId → redirects to sign-in                              │
+│      - If user's role doesn't match → redirect("/login")                │
+│      - Used by server components to gate access                         │
+│                                                                          │
+│  Dependencies:                                                           │
+│    auth() from @clerk/nextjs/server — gets current session userId       │
+│    db, ensureDB from @/lib/db — database access                         │
+│    redirect from next/navigation                                        │
+└──────────────────────────────────────────────────────────────────────────┘
+
+
+================================================================================
+3. ROUTE PROTECTION (MIDDLEWARE)
+================================================================================
+
+Next.js middleware runs on every request before the page renders. Clerk's
+clerkMiddleware() handles session validation and route protection.
+
+┌──────────────────────────────────────────────────────────────────────────┐
+│  src/proxy.ts                                                            │
+│                                                                          │
+│  Imports:                                                                │
+│    clerkMiddleware, createRouteMatcher from @clerk/nextjs/server         │
+│                                                                          │
+│  Route Matchers:                                                         │
+│    Protected: /pos(.*), /daily-log(.*), /dashboard(.*), /products(.*),  │
+│               /staff(.*), /analytics(.*)                                 │
+│    Public:    /api/webhooks/clerk(.*), /login(.*), /signup(.*),         │
+│               /sso-callback(.*)                                          │
+│                                                                          │
+│  Logic:                                                                  │
+│    1. If route matches public matcher → skip (return early)             │
+│    2. If route matches protected matcher → call auth.protect()          │
+│       - If unauthenticated, Clerk automatically redirects to /login     │
+│                                                                          │
+│  Matcher Config:                                                         │
+│    Runs on all routes EXCEPT:                                            │
+│      - _next (Next.js internals)                                         │
+│      - Static files (*.html, *.css, *.js, images, fonts, etc.)          │
+│    Always runs on /api/* and /trpc/*                                     │
+│                                                                          │
+│  NOTE: Route groups (admin) and (seller) do NOT affect URL paths.       │
+│  So /dashboard resolves to (admin)/dashboard/page.tsx even though the   │
+│  file sits in src/app/(admin)/dashboard/page.tsx. This is Next.js       │
+│  route group behavior — the parens group is invisible in the URL.       │
+└──────────────────────────────────────────────────────────────────────────┘
+
+
+================================================================================
+4. USER SYNC (CLERK WEBHOOK)
+================================================================================
+
+When users sign up, update their profile, or delete their account, Clerk
+fires a webhook. Zillion Enterprise receives it at /api/webhooks/clerk and
+syncs the user record to the Turso database.
+
+┌──────────────────────────────────────────────────────────────────────────┐
+│  src/app/api/webhooks/clerk/route.ts                                     │
+│                                                                          │
+│  Endpoint: POST /api/webhooks/clerk                                      │
+│                                                                          │
+│  Security:                                                               │
+│    - Uses Svix to verify webhook signature                              │
+│    - Extracts svix-id, svix-timestamp, svix-signature from headers      │
+│    - Verifies with CLERK_WEBHOOK_SECRET env var                         │
+│    - Rejects requests with missing or invalid signatures (400)          │
+│                                                                          │
+│  Flow:                                                                   │
+│    1. Ensure CLERK_WEBHOOK_SECRET is set (500 if missing)               │
+│    2. Read svix headers from request                                    │
+│    3. Parse request body as JSON, then re-stringify for verification    │
+│    4. Verify with wh.verify(body, headers) → WebhookEvent               │
+│    5. Handle by event type:                                              │
+│                                                                          │
+│    Event: user.created / user.updated:                                   │
+│      - Extract id, email (from email_addresses[0]), first_name,         │
+│        last_name from evt.data                                           │
+│      - UPSERT into users table:                                          │
+│          INSERT INTO users (id, email, first_name, last_name, role)     │
+│          VALUES (?, ?, ?, ?, 'seller')                                   │
+│          ON CONFLICT (id) DO UPDATE SET ...                             │
+│      - New users always start as 'seller' (role changed by admin)       │
+│                                                                          │
+│    Event: user.deleted:                                                  │
+│      - DELETE FROM users WHERE id = ?                                    │
+│      - Guards against missing id (returns 400)                           │
+│                                                                          │
+│    6. Returns 200 "Webhook processed successfully"                      │
+│                                                                          │
+│  Dependencies:                                                           │
+│    svix — webhook signature verification                                │
+│    next/headers — access request headers                                │
+│    @/lib/db (ensureDB, db) — database operations                       │
+└──────────────────────────────────────────────────────────────────────────┘
+
+CLERK DASHBOARD SETUP
+  - Create an endpoint at: https://your-domain/api/webhooks/clerk
+  - Subscribe to events: user.created, user.updated, user.deleted
+  - Copy the Signing Secret (whsec_...) into .env as CLERK_WEBHOOK_SECRET
+  - The middleware (src/proxy.ts) explicitly allows this route as public
+
+
+================================================================================
+5. DATABASE SCHEMA & MIGRATION
+================================================================================
+
+Using Turso (edge-hosted libSQL, SQLite-compatible). The client is configured
+with DATABASE_URL and DATABASE_TOKEN from environment.
+
+┌──────────────────────────────────────────────────────────────────────────┐
+│  src/lib/db.ts                                                           │
+│                                                                          │
+│  Connection:                                                             │
+│    createClient({ url, authToken }) → db                                 │
+│    - url: libsql://host.turso.io (edge HTTP protocol)                   │
+│    - authToken: JWT-based authentication token                           │
+│                                                                          │
+│  ensureDB(): Lazy singleton migration runner                             │
+│    - Runs once (per process lifetime) on first call                     │
+│    - Uses initPromise pattern: if already running, returns same promise  │
+│    - On error: resets initPromise to null for automatic retry           │
+│    - All DB queries in the app call await ensureDB() before executing   │
+│                                                                          │
+│  Tables created by ensureDB():                                           │
+│                                                                          │
+│  1. users                                                                 │
+│     id         TEXT PRIMARY KEY (Clerk user ID)                          │
+│     email      TEXT NOT NULL                                              │
+│     first_name TEXT                                                       │
+│     last_name  TEXT                                                       │
+│     role       TEXT NOT NULL DEFAULT 'seller'                             │
+│     created_at TEXT NOT NULL DEFAULT datetime('now')                      │
+│                                                                          │
+│  2. products                                                              │
+│     id            TEXT PRIMARY KEY DEFAULT lower(hex(randomblob(16)))     │
+│     name          TEXT NOT NULL                                            │
+│     brand         TEXT                                                     │
+│     category      TEXT                                                     │
+│     inventoryType TEXT NOT NULL DEFAULT 'BULK'                             │
+│                   CHECK (inventoryType IN ('SERIALIZED', 'BULK'))         │
+│     cost_price    REAL NOT NULL                                            │
+│     retail_price  REAL NOT NULL                                            │
+│     bulk_stock    INTEGER NOT NULL DEFAULT 0                               │
+│     created_at    TEXT NOT NULL DEFAULT datetime('now')                    │
+│     updated_at    TEXT NOT NULL DEFAULT datetime('now')                    │
+│                                                                          │
+│  3. sales                                                                  │
+│     id             TEXT PRIMARY KEY DEFAULT lower(hex(randomblob(16)))    │
+│     product_id     TEXT NOT NULL → products(id)                           │
+│     seller_id      TEXT NOT NULL → users(id)                              │
+│     quantity       INTEGER NOT NULL                                        │
+│     unit_price     REAL NOT NULL                                           │
+│     total          REAL NOT NULL                                           │
+│     cost_price     REAL NOT NULL                                           │
+│     profit         REAL NOT NULL                                           │
+│     payment_method TEXT NOT NULL CHECK (... IN ('cash','transfer','pos')) │
+│     created_at     TEXT NOT NULL DEFAULT datetime('now')                   │
+│                                                                          │
+│  4. product_items                                                         │
+│     id         TEXT PRIMARY KEY DEFAULT lower(hex(randomblob(16)))        │
+│     product_id TEXT NOT NULL → products(id)                               │
+│     imei       TEXT UNIQUE                                                 │
+│     status     TEXT NOT NULL DEFAULT 'in_stock'                           │
+│                CHECK (status IN ('in_stock', 'sold'))                     │
+│     sale_id    TEXT → sales(id)                                            │
+│     created_at TEXT NOT NULL DEFAULT datetime('now')                       │
+│                                                                          │
+│  Migration (backward-compat):                                             │
+│    - Checks if products table has inventoryType column                   │
+│    - If missing: ALTER TABLE products ADD COLUMN inventoryType TEXT       │
+│      DEFAULT 'BULK' (without CHECK — SQLite doesn't support CHECK in     │
+│      ALTER TABLE ADD COLUMN)                                              │
+│                                                                          │
+│  SETUP SCRIPT:                                                            │
+│    scripts/setup-db.mjs — standalone Node.js script that creates the     │
+│    users table manually (same DDL as ensureDB). Run with:                │
+│      node scripts/setup-db.mjs                                           │
+│    Requires dotenv to load .env file.                                    │
+└──────────────────────────────────────────────────────────────────────────┘
+
+
+================================================================================
+6. ROOT REDIRECT LOGIC
+================================================================================
+
+The homepage (/) determines where to send users based on authentication and
+role.
+
+┌──────────────────────────────────────────────────────────────────────────┐
+│  src/app/page.tsx                                                        │
+│                                                                          │
+│  Flow:                                                                   │
+│    1. Call auth() from @clerk/nextjs/server → get userId                │
+│    2. If no userId → redirect("/login")                                 │
+│    3. Call getUserRole(userId) from @/lib/roles                         │
+│       - This queries the Turso users table                              │
+│       - Calls ensureDB() internally                                      │
+│    4. If role === "admin" → redirect("/dashboard")                      │
+│    5. If role === "seller" → redirect("/pos")                           │
+│    6. Otherwise (no role found) → redirect("/login")                    │
+│                                                                          │
+│  NOTE: This is a server component (async, no "use client").              │
+│  Uses force-dynamic behavior implicitly because it reads auth state.     │
+└──────────────────────────────────────────────────────────────────────────┘
+
+
+================================================================================
+7. ADMIN PANEL
+================================================================================
+
+All admin routes are under src/app/(admin)/. The route group (admin) has no
+effect on URLs — paths are /dashboard, /products, /staff, /analytics.
+
+Middleware protects these routes. Only users with role='admin' should access
+them (enforced by page-level checks via requireRole()).
+
+
+7a. ADMIN LAYOUT
+─────────────────
+
+┌──────────────────────────────────────────────────────────────────────────┐
+│  src/app/(admin)/layout.tsx                                              │
+│                                                                          │
+│  Structure:                                                              │
+│    SidebarProvider (manages expanded/collapsed state)                   │
+│    ├── AdminSidebar (sidebar component)                                 │
+│    └── SidebarInset                                                      │
+│        ├── <header> sticky top bar                                       │
+│        │   ├── SidebarTrigger (toggle button)                            │
+│        │   ├── Separator (vertical)                                      │
+│        │   └── UserButton (Clerk — avatar, account, sign out)           │
+│        └── <div> flex-1 padded content area → renders {children}        │
+│                                                                          │
+│  Dependencies:                                                           │
+│    @/components/admin-sidebar                                           │
+│    @/components/ui/sidebar (SidebarProvider, SidebarInset,              │
+│                             SidebarTrigger)                              │
+│    @/components/ui/separator                                             │
+│    @clerk/nextjs (UserButton)                                           │
+└──────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────┐
+│  src/components/admin-sidebar.tsx                                        │
+│                                                                          │
+│  A navigation sidebar with four items:                                   │
+│    /dashboard      → LayoutDashboard icon                                │
+│    /products       → Package icon                                        │
+│    /staff          → Users icon                                          │
+│    /analytics      → BarChart3 icon                                      │
+│                                                                          │
+│  Features:                                                               │
+│    - NavUser component at top (avatar, name, email, dropdown)            │
+│    - Active state highlighting via pathname comparison                   │
+│    - Tooltips on collapsed sidebar                                       │
+│    - Footer with version label                                           │
+│                                                                          │
+│  Routing pattern:                                                        │
+│    Uses @base-ui/react render prop:                                      │
+│      <SidebarMenuButton render={<Link href="/dashboard" />}>            │
+│    This renders a semantic <a> tag inside the button slot, preserving    │
+│    Next.js client-side navigation                                        │
+│                                                                          │
+│  Dependencies:                                                           │
+│    @/components/nav-user                                                 │
+│    @/components/ui/sidebar (Sidebar, SidebarContent, SidebarFooter,     │
+│                             SidebarHeader, SidebarMenu, SidebarMenuButton,│
+│                             SidebarMenuItem, SidebarRail)                │
+│    lucide-react (LayoutDashboard, Package, Users, BarChart3)            │
+│    next/link (Link for client nav)                                       │
+│    next/navigation (usePathname for active state)                        │
+└──────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────┐
+│  src/app/(admin)/error.tsx                                               │
+│                                                                          │
+│  Next.js error boundary (use client). Catches rendering errors:         │
+│    - Shows "Something went wrong" heading                               │
+│    - Displays the error message                                          │
+│    - "Try again" button calls reset() to re-render the segment          │
+└──────────────────────────────────────────────────────────────────────────┘
+
+
+7b. DASHBOARD
+──────────────
+
+┌──────────────────────────────────────────────────────────────────────────┐
+│  src/app/(admin)/dashboard/page.tsx                                      │
+│                                                                          │
+│  Server component — fetches all dashboard data in parallel:              │
+│    metrics   = getTodayMetrics()   — today's revenue, profit, by method  │
+│    lowStock  = getLowStockProducts() — products with bulk_stock < 5      │
+│    sales     = getRecentSales()    — last 50 transactions                │
+│                                                                          │
+│  Uses dynamic = "force-dynamic" to skip static rendering.               │
+│  Delegates rendering to DashboardClient (client component).              │
+└──────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────┐
+│  src/app/(admin)/dashboard/client.tsx — DashboardClient                   │
+│                                                                          │
+│  Displays:                                                               │
+│    1. BREADCRUMB — "Dashboard"                                           │
+│    2. LOW STOCK ALERT — amber banner if any items below 5 units         │
+│    3. METRICS CARDS — 5-card grid:                                       │
+│         Total Revenue, Net Profit, Cash, Transfer, POS                  │
+│         Each shows today's NGN formatted value                           │
+│    4. SALES LOG — filterable table with:                                 │
+│         Time (mono font) | Staff | Item (with IMEI icon and badge) |    │
+│         Type badge (IMEI=BULK) | Qty | Total | Profit | Method badge    │
+│       Filters: Date picker + Payment method dropdown                     │
+│       Empty state: "No sales recorded yet"                               │
+│       Serialized items show IMEI numbers below product name             │
+│       Payment method color badges: cash=green, transfer=blue, pos=purple │
+│                                                                          │
+│  Dependencies:                                                           │
+│    @/components/ui/* (breadcrumb, card, table, input, select)           │
+│    lucide-react (AlertTriangle, TrendingUp, Wallet, Banknote,           │
+│                 CreditCard, Barcode, Package)                            │
+└──────────────────────────────────────────────────────────────────────────┘
+
+
+7c. PRODUCTS
+─────────────
+
+┌──────────────────────────────────────────────────────────────────────────┐
+│  src/app/(admin)/products/page.tsx                                       │
+│                                                                          │
+│  Server component:                                                       │
+│    products = getAllProducts() — all products sorted by name             │
+│    Renders ProductsClient with breadcrumb                                │
+│                                                                          │
+│  Dependencies:                                                           │
+│    @/lib/queries (getAllProducts)                                        │
+│    @/components/ui/breadcrumb                                            │
+└──────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────┐
+│  src/app/(admin)/products/client.tsx — ProductsClient                     │
+│                                                                          │
+│  Displays:                                                               │
+│    1. Product count + "Add Product" button                               │
+│    2. Product table with columns:                                        │
+│         Expand arrow (serialized only) | Name | Type badge | Cost  |    │
+│         Retail | Margin (₦ & %) | Stock | Edit button                    │
+│       Stock coloring: red=0, amber=<5, default=normal                    │
+│       Empty state: "No products yet"                                     │
+│    3. Inline expandable IMEI list for serialized products                │
+│       - Click arrow to fetch items via /api/products/{id}/items         │
+│       - Shows grid of IMEIs: green=in_stock, grey strikethrough=sold    │
+│       - Shows counts: "X in stock, Y sold"                              │
+│                                                                          │
+│    4. ADD PRODUCT DIALOG:                                                 │
+│       - Fields: Name*, Brand, Category, Cost Price*, Retail Price*,      │
+│                 Inventory Type (Bulk / Serialized)                       │
+│       - If BULK: Stock Quantity input                                    │
+│       - If SERIALIZED: Textarea for IMEI list (one per line)            │
+│       - Submits to addProduct server action → revalidates paths          │
+│       - Select with custom icons for inventory type options              │
+│                                                                          │
+│    5. EDIT PRODUCT DIALOG:                                                │
+│       - Pre-filled fields for the selected product                       │
+│       - If serialized: Textarea to ADD NEW IMEIs (existing unchanged)    │
+│       - If bulk: Stock Quantity input                                    │
+│       - Submits to editProduct server action                             │
+│                                                                          │
+│  Dependencies:                                                           │
+│    @/components/ui/* (button, table, dialog, field, input, textarea,    │
+│                       badge, select)                                     │
+│    @/lib/actions (addProduct, editProduct)                               │
+│    lucide-react (Plus, Pencil, ChevronDown, ChevronRight, Smartphone,   │
+│                 Package, Barcode)                                        │
+└──────────────────────────────────────────────────────────────────────────┘
+
+
+7d. STAFF
+──────────
+
+┌──────────────────────────────────────────────────────────────────────────┐
+│  src/app/(admin)/staff/page.tsx                                          │
+│                                                                          │
+│  Server component:                                                       │
+│    users = getAllUsers() — all users ordered by created_at DESC          │
+│    Renders StaffClient with breadcrumb                                   │
+│                                                                          │
+│  Dependencies:                                                           │
+│    @/lib/queries (getAllUsers)                                           │
+│    @/components/ui/breadcrumb                                            │
+└──────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────┐
+│  src/app/(admin)/staff/client.tsx — StaffClient                           │
+│                                                                          │
+│  Displays:                                                               │
+│    1. Summary: "X users, Y admins, Z sellers"                           │
+│    2. User table: Name | Email | Role (select dropdown) | Joined date   │
+│    3. Role selector triggers changeUserRole server action               │
+│       - Calls setUserRole() in lib/roles.ts                             │
+│       - Revalidates /staff path via router.refresh()                    │
+│    4. Empty state: "No users found"                                     │
+│                                                                          │
+│  Dependencies:                                                           │
+│    @/components/ui/* (table, select)                                     │
+│    @/lib/actions (changeUserRole)                                        │
+│    next/navigation (useRouter for refresh)                               │
+└──────────────────────────────────────────────────────────────────────────┘
+
+
+7e. ANALYTICS
+──────────────
+
+┌──────────────────────────────────────────────────────────────────────────┐
+│  src/app/(admin)/analytics/page.tsx                                      │
+│                                                                          │
+│  Server component — fetches analytics data in parallel:                  │
+│    revenueHistory = getRevenueHistory(30)  — daily revenue/profit for   │
+│                                               last 30 days              │
+│    topProducts    = getTopProducts(10)     — top 10 by revenue           │
+│    metrics        = getTodayMetrics()      — today's financial snapshot  │
+│                                                                          │
+│  Renders AnalyticsClient with breadcrumb                                 │
+│                                                                          │
+│  Dependencies:                                                           │
+│    @/lib/queries (getRevenueHistory, getTopProducts, getTodayMetrics)    │
+│    @/components/ui/breadcrumb                                            │
+└──────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────┐
+│  src/app/(admin)/analytics/client.tsx — AnalyticsClient (if exists)      │
+│                                                                          │
+│  Expected to display:                                                    │
+│    - Revenue chart (daily for last 30 days)                              │
+│    - Top-selling products bar chart                                      │
+│    - Today's metric summary cards                                        │
+│                                                                          │
+│  NOTE: Check actual file for precise implementation.                     │
+└──────────────────────────────────────────────────────────────────────────┘
+
+
+================================================================================
+8. SELLER POS
+================================================================================
+
+All seller routes are under src/app/(seller)/. URLs: /pos, /daily-log.
+Middleware protects these routes. Intended for role='seller' users.
+
+
+8a. SELLER LAYOUT
+──────────────────
+
+┌──────────────────────────────────────────────────────────────────────────┐
+│  src/app/(seller)/layout.tsx                                             │
+│                                                                          │
+│  Minimalist layout:                                                      │
+│    <header> sticky top bar with:                                         │
+│      "Zillion POS" brand link → /pos                                     │
+│      Nav links: New Sale (/pos), Daily Log (/daily-log)                  │
+│      UserButton (Clerk) right-aligned                                    │
+│    <main> flex-1 padded content area → {children}                        │
+│                                                                          │
+│  Dependencies:                                                           │
+│    @clerk/nextjs (UserButton)                                            │
+│    next/link                                                             │
+└──────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────┐
+│  src/app/(seller)/error.tsx                                              │
+│                                                                          │
+│  Same pattern as admin/error.tsx — client error boundary with            │
+│  "Something went wrong" + error message + "Try again" button.            │
+└──────────────────────────────────────────────────────────────────────────┘
+
+
+8b. POINT OF SALE (POS)
+────────────────────────
+
+┌──────────────────────────────────────────────────────────────────────────┐
+│  src/app/(seller)/pos/page.tsx                                           │
+│                                                                          │
+│  Server component:                                                       │
+│    userId   = auth() → get current seller's Clerk ID                    │
+│    products = getAllProducts() — all products for the dropdown           │
+│    Renders POSClient with products list and sellerId                     │
+│                                                                          │
+│  Dependencies:                                                           │
+│    @/lib/queries (getAllProducts)                                        │
+│    @clerk/nextjs/server (auth)                                           │
+└──────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────┐
+│  src/app/(seller)/pos/client.tsx — POSClient                              │
+│                                                                          │
+│  The "counter screen" — a single-page quick checkout interface:          │
+│                                                                          │
+│  Flow:                                                                   │
+│    1. Select Product from dropdown (shows stock count, type icon)        │
+│       - Disabled if stock = 0                                            │
+│    2. Based on inventory type:                                           │
+│       - BULK: Quantity input (min 1, max = bulk_stock)                  │
+│         Shows validation if qty exceeds stock                            │
+│       - SERIALIZED: IMEI input with real-time validation:                │
+│         Debounced fetch to /api/products/{id}/lookup-imei?imei=...      │
+│         Loading spinner while checking                                   │
+│         Green checkmark if valid + in stock                              │
+│         Red X if invalid / already sold                                  │
+│         Shows helper text for each state                                 │
+│    3. Payment Method: Cash / Transfer / POS                              │
+│    4. Footer shows: Total (bold) + Profit (green) + "Complete Sale"     │
+│       Button disabled until product selected + valid quantity/IMEI      │
+│    5. On submit: calls recordSale server action                          │
+│    6. Success state: green confirmation card with sale details           │
+│       Auto-resets after 1.5 seconds                                      │
+│    7. Submitting state: button shows "Recording..." disabled             │
+│                                                                          │
+│  Dependencies:                                                           │
+│    @/components/ui/* (button, card, select, field, input, badge)        │
+│    @/lib/actions (recordSale)                                            │
+│    lucide-react (ShoppingCart, Barcode, Package, CheckCircle,           │
+│                 XCircle, Loader2)                                        │
+│    next/navigation (useRouter for refresh)                               │
+└──────────────────────────────────────────────────────────────────────────┘
+
+
+8c. DAILY LOG
+──────────────
+
+┌──────────────────────────────────────────────────────────────────────────┐
+│  src/app/(seller)/daily-log/page.tsx                                     │
+│                                                                          │
+│  Server component:                                                       │
+│    userId = auth() → get current seller ID                              │
+│    sales  = getSellerSales(userId) — last 100 sales for this seller     │
+│    Renders DailyLogClient                                                │
+│                                                                          │
+│  Dependencies:                                                           │
+│    @/lib/queries (getSellerSales)                                        │
+│    @clerk/nextjs/server (auth)                                           │
+└──────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────┐
+│  src/app/(seller)/daily-log/client.tsx — DailyLogClient                   │
+│                                                                          │
+│  Displays the seller's personal sales history:                           │
+│    1. Date filter + Payment method filter                                │
+│    2. Running totals: Revenue (bold) + Profit (green)                    │
+│    3. Sales table: Date | Time | Item (with IMEI icon/details)  |       │
+│       Type badge | Qty | Total | Profit | Method badge                   │
+│       Empty state: "No sales yet"                                        │
+│    4. Same styling as admin dashboard sales log                          │
+│                                                                          │
+│  Dependencies:                                                           │
+│    @/components/ui/* (table, input, select, badge)                      │
+│    lucide-react (Barcode, Package)                                       │
+└──────────────────────────────────────────────────────────────────────────┘
+
+
+================================================================================
+9. SERVER ACTIONS
+================================================================================
+
+Server actions handle mutations — they run on the server but can be called
+directly from client components via form actions.
+
+┌──────────────────────────────────────────────────────────────────────────┐
+│  src/lib/actions.ts                                                      │
+│                                                                          │
+│  All functions use "use server" directive.                               │
+│                                                                          │
+│  addProduct(formData: FormData): Promise<void>                           │
+│    - Reads inventoryType, name, brand, category, prices                 │
+│    - If SERIALIZED: splits IMEI textarea by newlines into array          │
+│    - If BULK: reads bulk_stock                                           │
+│    - Calls createProduct() from queries                                  │
+│    - Revalidates /products and /dashboard                                │
+│                                                                          │
+│  editProduct(id: string, formData: FormData): Promise<void>              │
+│    - Reads optional fields from form (only submits non-empty)           │
+│    - If SERIALIZED: appends new IMEIs (does not touch existing)          │
+│    - Calls updateProduct() from queries                                  │
+│    - Revalidates /products and /dashboard                                │
+│                                                                          │
+│  recordSale(formData: FormData): Promise<void>                           │
+│    - Gets userId from Clerk auth()                                       │
+│    - Reads product_id, quantity, prices, payment_method                 │
+│    - Calculates total = qty × unit_price, profit = qty × margin         │
+│    - If serialized: passes item_ids from IMEI lookup result              │
+│    - Calls createSale() from queries                                     │
+│    - Revalidates /pos, /daily-log, /dashboard, /products, /analytics     │
+│                                                                          │
+│  changeUserRole(userId: string, role: "admin" | "seller"): Promise<void> │
+│    - Calls setUserRole() from roles                                      │
+│    - Revalidates /staff                                                  │
+│                                                                          │
+│  Dependencies:                                                           │
+│    @/lib/queries (createProduct, updateProduct, createSale)              │
+│    @/lib/roles (setUserRole)                                             │
+│    @clerk/nextjs/server (auth)                                           │
+│    next/cache (revalidatePath)                                           │
+└──────────────────────────────────────────────────────────────────────────┘
+
+
+================================================================================
+10. API ROUTES
+================================================================================
+
+API routes (not server actions) used for real-time lookups from client-side
+JavaScript (e.g., IMEI validation as the user types).
+
+┌──────────────────────────────────────────────────────────────────────────┐
+│  GET /api/products/{productId}/items                                     │
+│  src/app/api/products/[productId]/items/route.ts                        │
+│                                                                          │
+│  Returns all ProductItem records for a product:                          │
+│    [{ id, product_id, imei, status, sale_id, created_at }, ...]         │
+│                                                                          │
+│  Used by: ProductsClient — expandable IMEI list in products table       │
+│                                                                          │
+│  Dependencies:                                                           │
+│    @/lib/queries (getProductItems)                                       │
+└──────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────┐
+│  GET /api/products/{productId}/lookup-imei?imei=XXXXXXXX                 │
+│  src/app/api/products/[productId]/lookup-imei/route.ts                  │
+│                                                                          │
+│  Validates a single IMEI against the database:                           │
+│    Query: SELECT id, status FROM product_items WHERE product_id=?       │
+│           AND imei=?                                                     │
+│    Response: { found: boolean, id?: string, status?: string }            │
+│    400 if no imei param                                                  │
+│                                                                          │
+│  Used by: POSClient — real-time IMEI validation as the seller types     │
+│                                                                          │
+│  Dependencies:                                                           │
+│    @/lib/db (db, ensureDB)                                              │
+└──────────────────────────────────────────────────────────────────────────┘
+
+
+================================================================================
+11. REUSABLE UTILITIES
+================================================================================
+
+┌──────────────────────────────────────────────────────────────────────────┐
+│  src/lib/utils.ts                                                        │
+│                                                                          │
+│  cn(...inputs: ClassValue[]): string                                     │
+│    Tailwind class merge utility — combines clsx and tailwind-merge       │
+│    Used throughout all components for conditional className merging      │
+│                                                                          │
+│  Dependencies:                                                           │
+│    clsx, tailwind-merge                                                  │
+└──────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────┐
+│  src/hooks/use-mobile.ts                                                 │
+│                                                                          │
+│  Custom hook that detects mobile viewport and tracks resize events       │
+│  Used by the Sidebar component to switch between overlay/inline mode     │
+└──────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────┐
+│  src/lib/queries.ts — Data access layer (all DB queries)                 │
+│                                                                          │
+│  Query Functions:                                                        │
+│    getTodayMetrics()    — Revenue, profit, cash/transfer/POS totals      │
+│    getLowStockProducts()— Products with bulk_stock < 5                   │
+│    getRecentSales()     — Sales with filters (date range, method, seller)│
+│    getAllProducts()     — All products ordered by name                   │
+│    getProduct()         — Single product by ID                           │
+│    getProductItems()    — All product_items for a product                │
+│    createProduct()      — Insert product + optionally insert IMEIs       │
+│    updateProduct()      — Update fields + optionally append IMEIs        │
+│    createSale()         — Insert sale, update stock, mark IMEIs sold     │
+│    getAdminSellers()    — List of seller users for admin filtering       │
+│    getSellerSales()     — Sales by a specific seller                     │
+│    getAllUsers()        — All users ordered by created_at DESC           │
+│    getRevenueHistory()  — Daily revenue/profit for last N days           │
+│    getTopProducts()     — Top products by total revenue                  │
+│                                                                          │
+│  Types Exported:                                                         │
+│    Sale, Product, ProductItem, DashboardMetrics, User, DailyRevenue,     │
+│    ProductSummary                                                         │
+│                                                                          │
+│  Internal Helpers:                                                       │
+│    mapProduct(row) — Maps raw DB row to Product type                    │
+│    mapSale(row)    — Maps raw DB row to Sale type with JOINed fields    │
+│                                                                          │
+│  All functions call await ensureDB() first (lazy table creation).        │
+└──────────────────────────────────────────────────────────────────────────┘
+
+
+================================================================================
+12. UI COMPONENT LIBRARY
+================================================================================
+
+Located in src/components/ui/. All are shadcn/ui-style components built on
+Tailwind CSS v4 and @base-ui/react for composition.
+
+┌──────────────────────────────────────────────────────────────────────────┐
+│  Available components (21 total):                                        │
+│                                                                          │
+│  avatar.tsx        — Avatar with image fallback (initials)               │
+│  badge.tsx         — Inline label with variant colors                    │
+│  breadcrumb.tsx    — Navigation breadcrumb trail                         │
+│  button.tsx        — Variant/size-based button (cva)                     │
+│  calendar.tsx      — Date picker calendar grid                           │
+│  card.tsx          — Card container (header, content, footer)            │
+│  collapsible.tsx   — Expandable/collapsible section                      │
+│  dialog.tsx        — Modal dialog with overlay                           │
+│  dropdown-menu.tsx — Context menu / dropdown                             │
+│  field.tsx         — Form field layout (label, description, group)       │
+│  input.tsx         — Text input field                                    │
+│  label.tsx         — Form label                                          │
+│  select.tsx        — Native-like select dropdown                         │
+│  separator.tsx     — Horizontal/vertical divider                         │
+│  sheet.tsx         — Slide-in panel (mobile sidebar)                     │
+│  sidebar.tsx       — Full sidebar system (provider, trigger, rail,      │
+│                      menu, group, sub-menu, etc.) — 20+ sub-components   │
+│  skeleton.tsx      — Loading placeholder                                 │
+│  spinner.tsx       — Loading spinner indicator                           │
+│  table.tsx         — Data table with header/body/row/cell                │
+│  textarea.tsx      — Multi-line text input                               │
+│  tooltip.tsx       — Hover tooltip                                       │
+│                                                                          │
+│  Design tokens are in src/app/globals.css:                               │
+│    - CSS variables for all shadcn colors (background, foreground,        │
+│      primary, secondary, muted, accent, destructive, border, input,      │
+│      ring, chart colors, sidebar colors)                                 │
+│    - OKLCH color space                                                   │
+│    - Dark mode via .dark class selector                                  │
+│    - Radius scale (sm→4xl)                                               │
+│    - Tailwind CSS v4 with @import "tailwindcss"                         │
+│    - tw-animate-css for animations                                       │
+│    - shadcn/tailwind.css for shadcn base styles                          │
+└──────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────┐
+│  src/components/app-sidebar.tsx (legacy)                                  │
+│                                                                          │
+│  Original sidebar template (calendar-themed) that came with shadcn.      │
+│  Not currently used in any page — kept as a loading skeleton reference   │
+│  for admin/loading.tsx (if needed). Contains:                             │
+│    - NavUser                                                              │
+│    - DatePicker                                                           │
+│    - Calendars list (Personal, Work, Family, Holidays, etc.)             │
+│    - "New Calendar" button                                               │
+└──────────────────────────────────────────────────────────────────────────┘
+
+
+================================================================================
+13. CRITICAL FILES INDEX
+================================================================================
+
+AUTH & SESSION
+  src/app/layout.tsx                          — ClerkProvider root wrapper
+  src/proxy.ts                                — clerkMiddleware route protection
+  src/lib/roles.ts                            — getUserRole, setUserRole, requireRole
+  src/app/page.tsx                            — Root redirect by role
+  src/app/login/page.tsx                      — Clerk SignIn component
+  src/app/signup/page.tsx                     — Clerk SignUp component
+  src/components/nav-user.tsx                 — User avatar dropdown (sidebar)
+  src/components/login-form.tsx               — Decorative login form
+  src/components/signup-form.tsx              — Decorative signup form
+
+DATABASE
+  src/lib/db.ts                               — Turso client + ensureDB() migration
+  src/lib/queries.ts                          — All DB query functions & types
+  scripts/setup-db.mjs                        — One-time table creation script
+
+WEBHOOK
+  src/app/api/webhooks/clerk/route.ts         — User sync from Clerk
+
+SERVER ACTIONS
+  src/lib/actions.ts                          — addProduct, editProduct, recordSale,
+                                               changeUserRole
+
+API ROUTES
+  src/app/api/products/[productId]/items/route.ts
+  src/app/api/products/[productId]/lookup-imei/route.ts
+
+ADMIN (src/app/(admin)/)
+  layout.tsx                                  — Sidebar + top bar layout
+  error.tsx                                   — Error boundary
+  dashboard/page.tsx                          — Server: metrics, low stock, sales
+  dashboard/client.tsx                        — Metric cards, sales table, filters
+  products/page.tsx                           — Server: all products
+  products/client.tsx                         — Product table + add/edit dialogs
+  staff/page.tsx                              — Server: all users
+  staff/client.tsx                            — User table + role management
+  analytics/page.tsx                          — Server: revenue history, top products
+  analytics/client.tsx                        — Charts & analysis
+
+SELLER (src/app/(seller)/)
+  layout.tsx                                  — Minimal top bar layout
+  error.tsx                                   — Error boundary
+  pos/page.tsx                                — Server: products for POS
+  pos/client.tsx                              — Quick checkout counter
+  daily-log/page.tsx                          — Server: seller's sales
+  daily-log/client.tsx                        — Sales history table
+
+COMPONENTS
+  src/components/admin-sidebar.tsx            — Admin nav sidebar
+  src/components/nav-user.tsx                 — Clerk-powered user menu
+  src/components/app-sidebar.tsx              — Legacy calendar sidebar (skeleton ref)
+  src/components/ui/                          — 21 shadcn/ui components
+
+CONFIGURATION
+  next.config.ts                              — Image remotePatterns (img.clerk.com)
+  package.json                                — Dependencies & scripts
+  tsconfig.json                               — TypeScript config with @/ alias
+  .env                                        — Clerk keys, Turso URL/token, webhook secret
+  .gitignore                                  — .env* already gitignored
+
+================================================================================
+  END OF DOCUMENT
+================================================================================

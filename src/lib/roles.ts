@@ -1,5 +1,6 @@
 import { db, ensureDB } from "@/lib/db";
 import { auth } from "@clerk/nextjs/server";
+import { redirect } from "next/navigation";
 
 export type UserRole = "admin" | "seller";
 
@@ -26,6 +27,6 @@ export async function requireRole(role: UserRole) {
   if (!userId) return redirectToSignIn();
   const userRole = await getUserRole(userId);
   if (userRole !== role) {
-    throw new Error("Unauthorized");
+    redirect("/login");
   }
 }
