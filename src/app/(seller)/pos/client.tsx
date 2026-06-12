@@ -106,7 +106,17 @@ export function POSClient({
     c.product.inventoryType === "SERIALIZED" ? c.imeiStatus === "valid" : c.quantity > 0
   )
 
+  function cartQty(productId: string) {
+    return cart.reduce((s, c) => s + (c.product.id === productId ? c.quantity : 0), 0)
+  }
+
+  function availableStock(product: Product) {
+    return product.bulk_stock - cartQty(product.id)
+  }
+
   function addToCart(product: Product) {
+    if (availableStock(product) <= 0) return
+
     if (product.inventoryType === "SERIALIZED") {
       setCart((prev) => [...prev, { product, quantity: 1 }])
     } else {
@@ -243,10 +253,8 @@ export function POSClient({
                   <button
                     key={p.id}
                     type="button"
-                    onClick={() => {
-                      if (p.bulk_stock > 0) addToCart(p)
-                    }}
-                    disabled={p.bulk_stock === 0}
+                    onClick={() => addToCart(p)}
+                    disabled={availableStock(p) === 0}
                     className={`group relative flex flex-col items-start gap-1.5 rounded-xl border p-3 text-left transition-all ${
                       p.bulk_stock === 0
                         ? "border-dashed border-muted-foreground/20 opacity-50 cursor-not-allowed"
@@ -257,14 +265,14 @@ export function POSClient({
                       <Barcode className="size-4 text-muted-foreground" />
                       <span
                         className={`text-xs font-medium ${
-                          p.bulk_stock === 0
+                          availableStock(p) === 0
                             ? "text-destructive"
-                            : p.bulk_stock < 3
+                            : availableStock(p) < 3
                             ? "text-amber-600"
                             : "text-muted-foreground"
                         }`}
                       >
-                        {p.bulk_stock} left
+                        {availableStock(p)} left
                       </span>
                     </div>
                     <span className="text-sm font-semibold leading-tight">{p.name}</span>
@@ -290,12 +298,10 @@ export function POSClient({
                   <button
                     key={p.id}
                     type="button"
-                    onClick={() => {
-                      if (p.bulk_stock > 0) addToCart(p)
-                    }}
-                    disabled={p.bulk_stock === 0}
+                    onClick={() => addToCart(p)}
+                    disabled={availableStock(p) === 0}
                     className={`group relative flex flex-col items-start gap-1.5 rounded-xl border p-3 text-left transition-all ${
-                      p.bulk_stock === 0
+                      availableStock(p) === 0
                         ? "border-dashed border-muted-foreground/20 opacity-50 cursor-not-allowed"
                         : "border-border hover:border-primary/50 hover:bg-accent/30 hover:shadow-sm cursor-pointer"
                     }`}
@@ -304,14 +310,14 @@ export function POSClient({
                       <Package className="size-4 text-muted-foreground" />
                       <span
                         className={`text-xs font-medium ${
-                          p.bulk_stock === 0
+                          availableStock(p) === 0
                             ? "text-destructive"
-                            : p.bulk_stock < 5
+                            : availableStock(p) < 5
                             ? "text-amber-600"
                             : "text-muted-foreground"
                         }`}
                       >
-                        {p.bulk_stock} left
+                        {availableStock(p)} left
                       </span>
                     </div>
                     <span className="text-sm font-semibold leading-tight">{p.name}</span>
